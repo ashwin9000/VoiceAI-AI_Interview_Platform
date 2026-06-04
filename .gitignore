@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+
+# Uploads
+server/uploads/*
+!server/uploads/.gitkeep
+
+# Build
+client/dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+.agents/
+skills-lock.json
+DESIGN.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
