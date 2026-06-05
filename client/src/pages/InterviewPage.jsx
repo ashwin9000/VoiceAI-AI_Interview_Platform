@@ -6,33 +6,105 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import VoiceRecorder from '../components/VoiceRecorder';
 import toast from 'react-hot-toast';
 import {
-  BrainCircuit, ChevronLeft, ChevronRight, AlertTriangle,
-  X, CheckCircle2, Mic, ArrowRight, Clock, SkipForward,
-  RotateCcw, User, Check
+  BrainCircuit, AlertTriangle,
+  X, CheckCircle2, Mic, ArrowRight, Clock,
+  User, Check, Send, Loader2, MessageCircle, Eraser
 } from 'lucide-react';
+
+/**
+ * Interview phase definitions for the progress indicator.
+ */
+const PHASES = [
+  { key: 'resume', label: 'Resume', icon: '📄' },
+  { key: 'technical', label: 'Technical', icon: '⚙️' },
+  { key: 'conceptual', label: 'Conceptual', icon: '💡' },
+  { key: 'behavioral', label: 'Behavioral', icon: '🤝' },
+];
 
 const InterviewPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
 
+  // Core state
   const [interview, setInterview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Dynamic question flow state
+  const [conversationHistory, setConversationHistory] = useState([]); // { question, answer, type, isFollowUp }
+  const [currentQuestion, setCurrentQuestion] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState([]);
+  const [currentAnswer, setCurrentAnswer] = useState('');
+  const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
+  const [isInterviewComplete, setIsInterviewComplete] = useState(false);
+  const [questionState, setQuestionState] = useState(null);
+
+  // Timer & completion
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [isCompleting, setIsCompleting] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const timerRef = useRef(null);
+  const historyEndRef = useRef(null);
+  const voiceRecorderRef = useRef(null);
 
+  // Fetch interview on mount
   useEffect(() => {
     const fetchInterview = async () => {
       try {
         const response = await interviewAPI.getById(id);
         const data = response.data.data;
         setInterview(data);
-        setAnswers(new Array(data.questions?.length || 0).fill(''));
+
+        // Reconstruct state from existing interview data
+        const questions = data.questions || [];
+        const answers = data.answers || [];
+        const state = data.questionState;
+
+        if (questions.length > 0) {
+          // Build conversation history from already answered questions
+          const history = [];
+          for (let i = 0; i < questions.length; i++) {
+            const answer = answers.find((a) => a.questionIndex === i);
+            if (answer) {
+              history.push({
+                question: questions[i].text,
+                answer: answer.text,
+                type: questions[i].type,
+                isFollowUp: questions[i].isFollowUp || false,
+                difficulty: questions[i].difficulty,
+              });
+            }
+          }
+          setConversationHistory(history);
+
+          // The last question without an answer is the current question
+          const lastQuestion = questions[questions.length - 1];
+          const lastAnswered = answers.find((a) => a.questionIndex === questions.length - 1);
+
+          if (lastAnswered) {
+            // All questions answered — check if complete
+            if (state?.interviewPhase === 'complete') {
+              setIsInterviewComplete(true);
+              setCurrentQuestion(null);
+            } else {
+              // Shouldn't happen normally — all answered but not complete
+              setCurrentQuestion(null);
+              setIsInterviewComplete(true);
+            }
+          } else {
+            setCurrentQuestion({
+              index: questions.length - 1,
+              text: lastQuestion.text,
+              type: lastQuestion.type,
+              difficulty: lastQuestion.difficulty,
+              isFollowUp: lastQuestion.isFollowUp || false,
+            });
+            setCurrentQuestionIndex(questions.length - 1);
+          }
+
+          setQuestionState(state);
+        }
       } catch (err) {
         const message = err.response?.data?.error || 'Failed to load interview.';
         setError(message);
@@ -44,16 +116,24 @@ const InterviewPage = () => {
     fetchInterview();
   }, [id]);
 
+  // Timer
   useEffect(() => {
-    if (interview && !isCompleting) {
+    if (interview && !isCompleting && !isInterviewComplete) {
       timerRef.current = setInterval(() => {
-        setTimerSeconds(prev => prev + 1);
+        setTimerSeconds((prev) => prev + 1);
       }, 1000);
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [interview, isCompleting]);
+  }, [interview, isCompleting, isInterviewComplete]);
+
+  // Auto-scroll conversation history
+  useEffect(() => {
+    if (historyEndRef.current) {
+      historyEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [conversationHistory, currentQuestion]);
 
   const formatTimer = (seconds) => {
     const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -61,58 +141,120 @@ const InterviewPage = () => {
     return `${mins}:${secs}`;
   };
 
-  const questions = interview?.questions || [];
-  const currentQuestion = questions[currentQuestionIndex];
-  const totalQuestions = questions.length;
-  const answeredCount = answers.filter(a => a && a.trim().length > 0).length;
-
   const handleTranscript = useCallback((text) => {
-    setAnswers(prev => {
-      const updated = [...prev];
-      updated[currentQuestionIndex] = text;
-      return updated;
-    });
-  }, [currentQuestionIndex]);
+    setCurrentAnswer(text);
+  }, []);
 
-  const goToPrev = () => { if (currentQuestionIndex > 0) setCurrentQuestionIndex(prev => prev - 1); };
-  const goToNext = () => { if (currentQuestionIndex < totalQuestions - 1) setCurrentQuestionIndex(prev => prev + 1); };
-  const goToQuestion = (index) => { setCurrentQuestionIndex(index); };
+  /**
+   * Clear the current answer transcript.
+   */
+  const handleClearAnswer = useCallback(() => {
+    setCurrentAnswer('');
+    voiceRecorderRef.current?.clearTranscript();
+  }, []);
 
+  /**
+   * Submit the current answer, receive the next question from AI.
+   */
+  const handleSubmitAnswer = async () => {
+    if (!currentAnswer.trim()) {
+      toast.error('Please record or type your answer first.');
+      return;
+    }
+
+    setIsSubmittingAnswer(true);
+
+    try {
+      const response = await interviewAPI.submitAnswer(id, {
+        questionIndex: currentQuestionIndex,
+        text: currentAnswer.trim(),
+      });
+
+      const data = response.data.data;
+
+      // Add current Q&A to conversation history
+      setConversationHistory((prev) => [
+        ...prev,
+        {
+          question: currentQuestion.text,
+          answer: currentAnswer.trim(),
+          type: currentQuestion.type,
+          isFollowUp: currentQuestion.isFollowUp,
+          difficulty: currentQuestion.difficulty,
+        },
+      ]);
+
+      // Clear current answer
+      setCurrentAnswer('');
+
+      // Update question state
+      if (data.questionState) {
+        setQuestionState(data.questionState);
+      }
+
+      if (data.isComplete) {
+        // Interview is complete — no more questions
+        setIsInterviewComplete(true);
+        setCurrentQuestion(null);
+        if (timerRef.current) clearInterval(timerRef.current);
+        toast.success('All questions completed! You can now end the interview.');
+      } else if (data.nextQuestion) {
+        // Set the new question
+        setCurrentQuestion({
+          index: data.nextQuestion.index,
+          text: data.nextQuestion.text,
+          type: data.nextQuestion.type,
+          difficulty: data.nextQuestion.difficulty,
+          isFollowUp: data.nextQuestion.isFollowUp || false,
+        });
+        setCurrentQuestionIndex(data.nextQuestion.index);
+      }
+    } catch (err) {
+      const message = err.response?.data?.error || 'Failed to submit answer.';
+      toast.error(message);
+    } finally {
+      setIsSubmittingAnswer(false);
+    }
+  };
+
+  /**
+   * End the interview and trigger AI evaluation.
+   */
   const handleEndInterview = async () => {
     setShowConfirmModal(false);
     setIsCompleting(true);
     if (timerRef.current) clearInterval(timerRef.current);
 
     try {
-      const submissionAnswers = questions.map((q, i) => ({
-        questionId: q._id || q.id || i,
-        answer: answers[i] || '',
-        skipped: !answers[i] || answers[i].trim().length === 0,
-      }));
-
-      await interviewAPI.complete(id, { answers: submissionAnswers, duration: timerSeconds });
+      await interviewAPI.complete(id, { duration: timerSeconds });
       toast.success('Interview completed! Viewing results...');
       navigate(`/results/${id}`);
     } catch (err) {
       const message = err.response?.data?.error || 'Failed to submit interview.';
       toast.error(message);
       setIsCompleting(false);
-      timerRef.current = setInterval(() => { setTimerSeconds(prev => prev + 1); }, 1000);
+      timerRef.current = setInterval(() => {
+        setTimerSeconds((prev) => prev + 1);
+      }, 1000);
     }
   };
 
   const getTypeColor = (t) => {
     switch (t?.toLowerCase()) {
-      case 'technical': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'behavioral': return 'bg-purple-50 text-purple-700 border-purple-200';
-      case 'conceptual': return 'bg-cyan-50 text-cyan-700 border-cyan-200';
-      case 'resume-based': return 'bg-pink-50 text-pink-700 border-pink-200';
-      default: return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'technical': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500' };
+      case 'behavioral': return { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', dot: 'bg-purple-500' };
+      case 'conceptual': return { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', dot: 'bg-cyan-500' };
+      case 'resume-based': return { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200', dot: 'bg-pink-500' };
+      default: return { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', dot: 'bg-indigo-500' };
     }
   };
 
-  const isLastQuestion = currentQuestionIndex === totalQuestions - 1;
-  const currentAnswerFilled = answers[currentQuestionIndex] && answers[currentQuestionIndex].trim().length > 0;
+  const getPhaseIndex = (phase) => {
+    const idx = PHASES.findIndex((p) => p.key === phase);
+    return idx >= 0 ? idx : 0;
+  };
+
+  const answeredCount = conversationHistory.length;
 
   // --- Loading ---
   if (loading) {
@@ -154,7 +296,7 @@ const InterviewPage = () => {
             </div>
             <LoadingSpinner size="lg" className="mb-5" />
             <h2 className="text-xl font-bold text-[#191c1e] mb-2">AI is Evaluating Your Interview</h2>
-            <p className="text-sm text-[#767683] mb-1">Analyzing {answeredCount} of {totalQuestions} answers...</p>
+            <p className="text-sm text-[#767683] mb-1">Analyzing {answeredCount} answers...</p>
             <p className="text-xs text-[#c6c5d4]">This may take up to 2 minutes</p>
           </div>
         </main>
@@ -173,11 +315,52 @@ const InterviewPage = () => {
               <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
               <span className="text-sm font-medium text-[#191c1e]">Recording</span>
             </div>
-            <div className="flex items-center gap-2 bg-[#f7f9fb] border border-[#e5e7eb] rounded-full px-4 py-1.5">
-              <Clock className="w-4 h-4 text-[#000666]" />
-              <span className="text-sm font-mono font-semibold text-[#191c1e] tracking-wider">
-                {formatTimer(timerSeconds)}
-              </span>
+
+            {/* Phase Progress Indicator */}
+            <div className="hidden sm:flex items-center gap-1">
+              {PHASES.map((phase, i) => {
+                const currentPhaseIdx = getPhaseIndex(questionState?.interviewPhase || 'resume');
+                const isActive = i === currentPhaseIdx;
+                const isDone = i < currentPhaseIdx || questionState?.interviewPhase === 'complete';
+                return (
+                  <div key={phase.key} className="flex items-center">
+                    <div
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                        isActive
+                          ? 'bg-[#000666] text-white shadow-sm'
+                          : isDone
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-gray-50 text-[#767683] border border-gray-200'
+                      }`}
+                    >
+                      {isDone && !isActive ? (
+                        <CheckCircle2 className="w-3 h-3" />
+                      ) : (
+                        <span>{phase.icon}</span>
+                      )}
+                      <span className="hidden md:inline">{phase.label}</span>
+                    </div>
+                    {i < PHASES.length - 1 && (
+                      <div className={`w-4 h-0.5 mx-0.5 ${isDone ? 'bg-emerald-300' : 'bg-gray-200'}`} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 bg-[#f7f9fb] border border-[#e5e7eb] rounded-full px-4 py-1.5">
+                <Clock className="w-4 h-4 text-[#000666]" />
+                <span className="text-sm font-mono font-semibold text-[#191c1e] tracking-wider">
+                  {formatTimer(timerSeconds)}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowConfirmModal(true)}
+                className="text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-full border border-red-200 transition-all"
+              >
+                End
+              </button>
             </div>
           </div>
         </div>
@@ -185,7 +368,7 @@ const InterviewPage = () => {
         {/* ===== Scrollable Content ===== */}
         <div className="flex-1 overflow-y-auto pb-24">
           {/* AI Avatar Area */}
-          <div className="mx-6 mt-6 rounded-2xl bg-gradient-to-br from-cyan-100 via-purple-100 to-blue-100 min-h-[300px] relative flex items-center justify-center overflow-hidden">
+          <div className="mx-6 mt-6 rounded-2xl bg-gradient-to-br from-cyan-100 via-purple-100 to-blue-100 min-h-[200px] relative flex items-center justify-center overflow-hidden">
             {/* Decorative circles */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
               <div className="absolute -top-12 -left-12 w-48 h-48 bg-cyan-200/40 rounded-full blur-2xl" />
@@ -194,9 +377,9 @@ const InterviewPage = () => {
             </div>
 
             {/* AI Bot Icon */}
-            <div className="relative z-10 flex flex-col items-center gap-4">
-              <div className="w-24 h-24 rounded-3xl bg-white/80 backdrop-blur-sm shadow-lg flex items-center justify-center border border-white/60">
-                <BrainCircuit className="w-12 h-12 text-[#000666]" />
+            <div className="relative z-10 flex flex-col items-center gap-3">
+              <div className="w-20 h-20 rounded-3xl bg-white/80 backdrop-blur-sm shadow-lg flex items-center justify-center border border-white/60">
+                <BrainCircuit className="w-10 h-10 text-[#000666]" />
               </div>
               <div className="flex items-center gap-2 bg-white/70 backdrop-blur-sm rounded-full px-4 py-1.5 border border-white/50">
                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -205,130 +388,187 @@ const InterviewPage = () => {
             </div>
 
             {/* Webcam feed simulation – top-right */}
-            <div className="absolute top-4 right-4 w-20 h-20 rounded-xl bg-[#191c1e]/80 backdrop-blur-sm flex items-center justify-center border border-white/20 shadow-md">
-              <User className="w-8 h-8 text-white/70" />
+            <div className="absolute top-4 right-4 w-16 h-16 rounded-xl bg-[#191c1e]/80 backdrop-blur-sm flex items-center justify-center border border-white/20 shadow-md">
+              <User className="w-7 h-7 text-white/70" />
             </div>
           </div>
 
-          {/* Question Card */}
-          <div className="card p-6 mx-6 -mt-8 relative z-10">
-            {/* Header row */}
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-xs font-semibold tracking-wider text-indigo-600 uppercase">
-                Question {currentQuestionIndex + 1} of {totalQuestions}
-              </span>
-              {currentQuestion?.type && (
-                <span className={`text-xs font-medium px-3 py-1 rounded-full border ${getTypeColor(currentQuestion.type)}`}>
-                  {currentQuestion.type}
+          {/* ===== Conversation History ===== */}
+          {conversationHistory.length > 0 && (
+            <div className="mx-6 mt-4">
+              <div className="flex items-center gap-2 mb-3">
+                <MessageCircle className="w-4 h-4 text-[#767683]" />
+                <span className="text-xs font-semibold text-[#767683] uppercase tracking-wider">
+                  Conversation History ({conversationHistory.length} answered)
                 </span>
+              </div>
+              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                {conversationHistory.map((item, i) => {
+                  const colors = getTypeColor(item.type);
+                  return (
+                    <div key={i} className="rounded-xl border border-[#e5e7eb] bg-white overflow-hidden">
+                      {/* Question bubble */}
+                      <div className={`px-4 py-3 ${colors.bg} border-b ${colors.border}`}>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <div className="w-5 h-5 rounded-md bg-[#000666] flex items-center justify-center">
+                            <BrainCircuit className="w-3 h-3 text-white" />
+                          </div>
+                          <span className={`text-[10px] font-semibold uppercase tracking-wider ${colors.text}`}>
+                            {item.type}{item.isFollowUp ? ' · Follow-up' : ''} · Q{i + 1}
+                          </span>
+                        </div>
+                        <p className="text-sm text-[#191c1e] leading-relaxed">{item.question}</p>
+                      </div>
+                      {/* Answer bubble */}
+                      <div className="px-4 py-3 bg-white">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <div className="w-5 h-5 rounded-md bg-[#f0f0f5] flex items-center justify-center">
+                            <User className="w-3 h-3 text-[#767683]" />
+                          </div>
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#767683]">
+                            Your Answer
+                          </span>
+                          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                        </div>
+                        <p className="text-sm text-[#454652] leading-relaxed line-clamp-3">{item.answer}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={historyEndRef} />
+              </div>
+            </div>
+          )}
+
+          {/* ===== Current Question Card ===== */}
+          {currentQuestion && !isInterviewComplete && (
+            <div className="card p-6 mx-6 mt-4 relative z-10 border-2 border-[#000666]/10">
+              {/* Header row */}
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs font-semibold tracking-wider text-indigo-600 uppercase">
+                  Question {answeredCount + 1}
+                  {currentQuestion.isFollowUp && (
+                    <span className="ml-2 text-amber-600">· Follow-up</span>
+                  )}
+                </span>
+                {currentQuestion.type && (
+                  <span className={`text-xs font-medium px-3 py-1 rounded-full border ${getTypeColor(currentQuestion.type).bg} ${getTypeColor(currentQuestion.type).text} ${getTypeColor(currentQuestion.type).border}`}>
+                    {currentQuestion.type}
+                  </span>
+                )}
+              </div>
+
+              {/* Question text */}
+              <p className="text-lg sm:text-xl font-bold text-[#191c1e] leading-relaxed mb-6">
+                &ldquo;{currentQuestion.text}&rdquo;
+              </p>
+
+              {/* Answer input area */}
+              <div className="bg-[#f7f9fb] rounded-xl p-5 border border-[#e5e7eb]">
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-9 h-9 rounded-lg bg-[#eef2ff] flex items-center justify-center flex-shrink-0">
+                    <Mic className="w-4 h-4 text-[#000666]" />
+                  </div>
+                  <div className="flex-1">
+                    {currentAnswer.trim() ? (
+                      <p className="text-sm text-[#191c1e] leading-relaxed">{currentAnswer}</p>
+                    ) : (
+                      <p className="text-sm text-[#767683] italic">Your answer will appear here...</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* VoiceRecorder */}
+                <VoiceRecorder
+                  ref={voiceRecorderRef}
+                  key={currentQuestionIndex}
+                  onTranscript={handleTranscript}
+                  disabled={isSubmittingAnswer}
+                />
+
+                {/* Clear Answer Button */}
+                {currentAnswer.trim() && (
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      onClick={handleClearAnswer}
+                      disabled={isSubmittingAnswer}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Eraser className="w-3.5 h-3.5" />
+                      Clear Answer
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Answer recorded indicator */}
+              {currentAnswer.trim() && (
+                <div className="mt-4 flex items-center gap-2 text-emerald-600">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span className="text-xs font-medium uppercase tracking-wider">Answer recorded</span>
+                </div>
               )}
             </div>
+          )}
 
-            {/* Question text */}
-            <p className="text-lg sm:text-xl font-bold text-[#191c1e] leading-relaxed mb-6">
-              &ldquo;{currentQuestion?.question || currentQuestion?.text || 'Question not available.'}&rdquo;
-            </p>
-
-            {/* Answer input area */}
-            <div className="bg-[#f7f9fb] rounded-xl p-5 border border-[#e5e7eb]">
-              <div className="flex items-start gap-3 mb-4">
-                <div className="w-9 h-9 rounded-lg bg-[#eef2ff] flex items-center justify-center flex-shrink-0">
-                  <Mic className="w-4 h-4 text-[#000666]" />
-                </div>
-                <div className="flex-1">
-                  {currentAnswerFilled ? (
-                    <p className="text-sm text-[#191c1e] leading-relaxed">{answers[currentQuestionIndex]}</p>
-                  ) : (
-                    <p className="text-sm text-[#767683] italic">Your answer will appear here...</p>
-                  )}
-                </div>
+          {/* ===== Interview Complete Card ===== */}
+          {isInterviewComplete && !isCompleting && (
+            <div className="card p-8 mx-6 mt-4 text-center border-2 border-emerald-200 bg-emerald-50/50">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-100 flex items-center justify-center mx-auto mb-4 border border-emerald-200">
+                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
               </div>
-
-              {/* VoiceRecorder */}
-              <VoiceRecorder
-                key={currentQuestionIndex}
-                onTranscript={handleTranscript}
-                disabled={isCompleting}
-              />
+              <h2 className="text-xl font-bold text-[#191c1e] mb-2">All Questions Completed!</h2>
+              <p className="text-sm text-[#767683] mb-1">
+                You've answered {answeredCount} questions across all interview phases.
+              </p>
+              <p className="text-xs text-[#c6c5d4] mb-6">
+                Click &quot;End Interview&quot; below to get your AI evaluation report.
+              </p>
+              <button
+                onClick={() => setShowConfirmModal(true)}
+                className="inline-flex items-center gap-2 px-8 py-3 rounded-full text-sm font-semibold bg-[#000666] text-white hover:bg-[#4e45d5] transition-all shadow-md"
+              >
+                End Interview & Get Results
+                <ArrowRight className="w-4 h-4" />
+              </button>
             </div>
-
-            {/* Saved answer indicator */}
-            {currentAnswerFilled && (
-              <div className="mt-4 flex items-center gap-2 text-emerald-600">
-                <CheckCircle2 className="w-4 h-4" />
-                <span className="text-xs font-medium uppercase tracking-wider">Answer recorded</span>
-              </div>
-            )}
-          </div>
-
-          {/* Question dots navigation */}
-          <div className="flex items-center justify-center gap-1.5 mt-6 mb-4 flex-wrap px-6">
-            {questions.map((_, i) => {
-              const isAnswered = answers[i] && answers[i].trim().length > 0;
-              const isCurrent = i === currentQuestionIndex;
-              return (
-                <button
-                  key={i}
-                  onClick={() => goToQuestion(i)}
-                  className={`w-3 h-3 rounded-full transition-all duration-300 ${
-                    isCurrent
-                      ? 'bg-[#000666] scale-125 shadow-md'
-                      : isAnswered
-                      ? 'bg-emerald-400 hover:bg-emerald-500'
-                      : 'bg-gray-200 hover:bg-gray-300'
-                  }`}
-                  title={`Question ${i + 1}${isAnswered ? ' (answered)' : ''}`}
-                />
-              );
-            })}
-          </div>
+          )}
         </div>
 
         {/* ===== Sticky Bottom Controls ===== */}
-        <div className="sticky bottom-0 z-30 bg-white/90 backdrop-blur-md border-t border-[#e5e7eb]">
-          <div className="px-6 py-4 flex items-center justify-between">
-            {/* Left: Repeat Question */}
-            <button
-              onClick={goToPrev}
-              disabled={currentQuestionIndex === 0}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition-all border ${
-                currentQuestionIndex === 0
-                  ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'
-                  : 'bg-white text-[#191c1e] border-[#e5e7eb] hover:bg-gray-50'
-              }`}
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span className="hidden sm:inline">Repeat Question</span>
-            </button>
+        {!isInterviewComplete && currentQuestion && (
+          <div className="sticky bottom-0 z-30 bg-white/90 backdrop-blur-md border-t border-[#e5e7eb]">
+            <div className="px-6 py-4 flex items-center justify-between">
+              {/* Left: Question counter */}
+              <div className="flex items-center gap-2 text-sm text-[#767683]">
+                <span className="font-medium">{answeredCount} answered</span>
+                <span className="text-[#c6c5d4]">·</span>
+                <span className="capitalize">{questionState?.interviewPhase || 'resume'} phase</span>
+              </div>
 
-            {/* Right: Next / Complete / End */}
-            {isLastQuestion ? (
-              <button
-                onClick={() => setShowConfirmModal(true)}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold bg-[#000666] text-white hover:bg-[#4e45d5] transition-all shadow-md"
-              >
-                End Interview
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            ) : currentAnswerFilled ? (
-              <button
-                onClick={goToNext}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold bg-[#000666] text-white hover:bg-[#4e45d5] transition-all shadow-md"
-              >
-                Next Question
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            ) : (
-              <button
-                onClick={goToNext}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold bg-[#000666] text-white hover:bg-[#4e45d5] transition-all shadow-md"
-              >
-                Complete Answer
-                <Check className="w-4 h-4" />
-              </button>
-            )}
+              {/* Right: Submit Answer */}
+              {isSubmittingAnswer ? (
+                <div className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold bg-[#000666]/80 text-white">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  AI is thinking...
+                </div>
+              ) : (
+                <button
+                  onClick={handleSubmitAnswer}
+                  disabled={!currentAnswer.trim()}
+                  className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition-all shadow-md ${
+                    currentAnswer.trim()
+                      ? 'bg-[#000666] text-white hover:bg-[#4e45d5]'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  Submit Answer
+                  <Send className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </main>
 
       {/* ===== Confirmation Modal ===== */}
@@ -348,16 +588,16 @@ const InterviewPage = () => {
             </div>
 
             <h3 className="text-xl font-bold text-[#191c1e] mb-2">End Interview?</h3>
-            <p className="text-sm text-[#767683] mb-2">Are you sure you want to end this interview?</p>
-            <p className="text-xs text-[#c6c5d4] mb-6">
-              {totalQuestions - answeredCount > 0 && (
-                <>
-                  <span className="text-amber-600 font-medium">{totalQuestions - answeredCount}</span>
-                  {' '}unanswered question{totalQuestions - answeredCount !== 1 ? 's' : ''} will be marked as skipped.
-                </>
-              )}
-              {totalQuestions - answeredCount === 0 && 'All questions have been answered.'}
+            <p className="text-sm text-[#767683] mb-2">
+              {isInterviewComplete
+                ? 'Your interview is complete. Submit for AI evaluation?'
+                : 'Are you sure you want to end the interview early?'}
             </p>
+            {!isInterviewComplete && (
+              <p className="text-xs text-amber-600 font-medium mb-4">
+                Some question phases may not be completed yet.
+              </p>
+            )}
 
             <div className="card-flat p-4 rounded-xl mb-6 flex items-center justify-around text-center">
               <div>
@@ -366,8 +606,8 @@ const InterviewPage = () => {
               </div>
               <div className="w-px h-10 bg-gray-200" />
               <div>
-                <p className="text-lg font-bold text-[#191c1e]">{totalQuestions - answeredCount}</p>
-                <p className="text-xs text-[#767683]">Skipped</p>
+                <p className="text-lg font-bold text-[#191c1e] capitalize">{questionState?.interviewPhase || 'resume'}</p>
+                <p className="text-xs text-[#767683]">Phase</p>
               </div>
               <div className="w-px h-10 bg-gray-200" />
               <div>

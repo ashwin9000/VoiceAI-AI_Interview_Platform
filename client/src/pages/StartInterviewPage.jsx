@@ -13,7 +13,7 @@ import {
 const LOADING_STEPS = [
   'Uploading document...',
   'Analyzing resume content...',
-  'Generating tailored questions...',
+  'Generating first interview question...',
   'Preparing interview environment...',
 ];
 

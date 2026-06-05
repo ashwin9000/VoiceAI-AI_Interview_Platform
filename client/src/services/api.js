@@ -60,9 +60,11 @@ export const interviewAPI = {
   // Get single interview by ID
   getById: (id) => api.get(`/interviews/${id}`),
   
-  // Submit an answer for a question
+  // Submit an answer and get the next dynamically-generated question
   submitAnswer: (id, answerData) => 
-    api.put(`/interviews/${id}/answer`, answerData),
+    api.put(`/interviews/${id}/answer`, answerData, {
+      timeout: 60000, // 60s timeout — AI generates next question after saving answer
+    }),
   
   // Complete interview and trigger evaluation
   complete: (id, data) => 

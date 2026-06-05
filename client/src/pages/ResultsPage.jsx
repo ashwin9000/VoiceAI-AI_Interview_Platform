@@ -11,7 +11,8 @@ import {
   Trophy, Download, RotateCcw, LayoutDashboard,
   CheckCircle2, AlertTriangle, TrendingUp, BookOpen, Award,
   Clock, Brain, MessageSquare, Lightbulb, Shield, Target, Users,
-  ExternalLink, ThumbsUp, BrainCircuit, ArrowRight
+  ExternalLink, ThumbsUp, BrainCircuit, ArrowRight, Loader2,
+  User, FileText
 } from 'lucide-react';
 
 const ResultsPage = () => {
@@ -21,6 +22,7 @@ const ResultsPage = () => {
   const [report, setReport] = useState(null);
   const [interview, setInterview] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => { fetchResults(); }, [id]);
 
@@ -40,18 +42,127 @@ const ResultsPage = () => {
     }
   };
 
+  /**
+   * Build Q&A pairs from interview questions and answers.
+   */
+  const getQAPairs = () => {
+    if (!interview?.questions || !interview?.answers) return [];
+    return interview.questions.map((q, index) => {
+      const answer = interview.answers.find((a) => a.questionIndex === index);
+      return {
+        index: index + 1,
+        question: q.text,
+        type: q.type || 'general',
+        difficulty: q.difficulty || 'medium',
+        isFollowUp: q.isFollowUp || false,
+        answer: answer ? answer.text : null,
+        skipped: !answer,
+      };
+    });
+  };
+
+  const getTypeColor = (t) => {
+    switch (t?.toLowerCase()) {
+      case 'technical': return 'bg-blue-100 text-blue-700 border-blue-200';
+      case 'behavioral': return 'bg-purple-100 text-purple-700 border-purple-200';
+      case 'conceptual': return 'bg-cyan-100 text-cyan-700 border-cyan-200';
+      case 'resume-based': return 'bg-pink-100 text-pink-700 border-pink-200';
+      default: return 'bg-indigo-100 text-indigo-700 border-indigo-200';
+    }
+  };
+
   const handleDownloadPDF = async () => {
+    if (isDownloading) return;
+    setIsDownloading(true);
+
     try {
-      const html2pdf = (await import('html2pdf.js')).default;
-      html2pdf().set({
-        margin: 0.5,
+      const html2pdfModule = await import('html2pdf.js');
+      const html2pdf = html2pdfModule.default || html2pdfModule;
+
+      const element = reportRef.current;
+      if (!element) {
+        toast.error('Report content not found');
+        setIsDownloading(false);
+        return;
+      }
+
+      // --- Resolve oklch → hex using Canvas 2D context ---
+      // html2canvas can't parse oklch() color functions from Tailwind CSS v4.
+      // Modern Chrome (111+) returns oklch from getComputedStyle as-is, so we
+      // force-convert via the canvas fillStyle setter (always returns sRGB hex).
+      const resolveColor = (cssColor) => {
+        if (!cssColor || typeof cssColor !== 'string') return cssColor;
+        if (!/oklch|oklab|lch\(|lab\(|color\(/.test(cssColor)) return cssColor;
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = canvas.height = 1;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#000000'; // reset baseline
+          ctx.fillStyle = cssColor;  // browser converts to sRGB
+          return ctx.fillStyle;      // getter always returns hex
+        } catch {
+          return '#000000';
+        }
+      };
+
+      const COLOR_PROPS = [
+        'color', 'backgroundColor', 'borderColor',
+        'borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor',
+        'outlineColor', 'textDecorationColor',
+      ];
+
+      // Pre-compute a color map from the LIVE DOM (before html2canvas clones it).
+      // Each entry maps index → { prop: resolvedHexColor }.
+      const originalEls = [element, ...element.querySelectorAll('*')];
+      const colorMap = originalEls.map((el) => {
+        const computed = window.getComputedStyle(el);
+        const resolved = {};
+        COLOR_PROPS.forEach((prop) => {
+          const val = computed[prop];
+          if (val) resolved[prop] = resolveColor(val);
+        });
+        return resolved;
+      });
+
+      const opt = {
+        margin: [0.4, 0.4, 0.4, 0.4],
         filename: `interview-report-${interview?.role || 'report'}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, backgroundColor: '#ffffff' },
+        image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          useCORS: true,
+          logging: false,
+          onclone: (_clonedDoc, clonedElement) => {
+            // Apply pre-computed hex colors as inline styles on html2canvas's
+            // internal clone. Inline styles override stylesheet oklch values,
+            // so the parser only sees hex/rgb — no more oklch errors.
+            const clonedEls = [clonedElement, ...clonedElement.querySelectorAll('*')];
+            clonedEls.forEach((el, i) => {
+              if (!colorMap[i]) return;
+              Object.entries(colorMap[i]).forEach(([prop, val]) => {
+                if (val) el.style[prop] = val;
+              });
+            });
+
+            // Remove SVG icons — they cause html2canvas rendering glitches
+            clonedElement.querySelectorAll('svg').forEach((svg) => svg.remove());
+          },
+        },
         jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
-      }).from(reportRef.current).save();
-      toast.success('PDF download started!');
-    } catch { toast.error('Failed to generate PDF'); }
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+      };
+
+      await html2pdf().set(opt).from(element).save();
+      toast.success('PDF downloaded successfully!');
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      toast.error('Failed to generate PDF. Please try again.');
+    } finally {
+      // Clean up any stale html2canvas clones/containers that could block the page
+      document.querySelectorAll('.html2canvas-container, [data-html2canvas-clone]').forEach((el) => el.remove());
+      setIsDownloading(false);
+    }
   };
 
   const formatDuration = (s) => {
@@ -92,6 +203,7 @@ const ResultsPage = () => {
   }
 
   const gradeInfo = getGrade(report.overallScore);
+  const qaPairs = getQAPairs();
 
   const getPercentile = (score) => {
     if (score >= 95) return 5;
@@ -180,6 +292,73 @@ const ResultsPage = () => {
               </div>
             </div>
           </div>
+
+          {/* ── Interview Q&A Transcript ── */}
+          {qaPairs.length > 0 && (
+            <div className="mb-8">
+              <h2 className="text-lg font-bold text-[#191c1e] mb-5 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-[#4e45d5]" />
+                Interview Q&A Transcript
+              </h2>
+              <div className="space-y-4">
+                {qaPairs.map((pair) => (
+                  <div
+                    key={pair.index}
+                    className="bg-white rounded-2xl border border-[#e5e7eb] overflow-hidden"
+                  >
+                    {/* Question */}
+                    <div className="px-5 py-4 border-b border-[#e5e7eb] bg-[#f9fafb]">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <div className="w-6 h-6 rounded-md bg-[#000666] flex items-center justify-center flex-shrink-0">
+                          <BrainCircuit className="w-3.5 h-3.5 text-white" />
+                        </div>
+                        <span className="text-xs font-bold text-[#191c1e] uppercase tracking-wider">
+                          Q{pair.index}
+                        </span>
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${getTypeColor(pair.type)}`}>
+                          {pair.type}
+                        </span>
+                        {pair.isFollowUp && (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">
+                            Follow-up
+                          </span>
+                        )}
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-[#767683]">
+                          {pair.difficulty}
+                        </span>
+                      </div>
+                      <p className="text-sm font-semibold text-[#191c1e] leading-relaxed">
+                        {pair.question}
+                      </p>
+                    </div>
+                    {/* Answer */}
+                    <div className="px-5 py-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-6 h-6 rounded-md bg-[#f0f0f5] flex items-center justify-center flex-shrink-0">
+                          <User className="w-3.5 h-3.5 text-[#767683]" />
+                        </div>
+                        <span className="text-xs font-bold text-[#767683] uppercase tracking-wider">
+                          Your Answer
+                        </span>
+                        {pair.skipped ? (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">
+                            Skipped
+                          </span>
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                        )}
+                      </div>
+                      {pair.skipped ? (
+                        <p className="text-sm text-[#767683] italic">No answer provided</p>
+                      ) : (
+                        <p className="text-sm text-[#454652] leading-relaxed">{pair.answer}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ── Detailed AI Feedback ── */}
           <div className="mb-8">
@@ -306,13 +485,26 @@ const ResultsPage = () => {
             </div>
           </div>
 
-          {/* ── Bottom Action Buttons ── */}
+        {/* Close the reportRef div here — action buttons and footer are OUTSIDE the PDF content */}
+        </div>
+
+        {/* ── Bottom Action Buttons (outside reportRef so they don't appear in PDF) ── */}
+        <div className="max-w-5xl mx-auto">
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
             <button
               onClick={handleDownloadPDF}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border-2 border-[#e5e7eb] text-sm font-semibold text-[#191c1e] bg-white hover:border-[#4e45d5] hover:text-[#4e45d5] transition-colors w-full sm:w-auto justify-center"
+              disabled={isDownloading}
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border-2 border-[#e5e7eb] text-sm font-semibold text-[#191c1e] bg-white hover:border-[#4e45d5] hover:text-[#4e45d5] transition-colors w-full sm:w-auto justify-center disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <Download className="w-4 h-4" /> Download Report PDF
+              {isDownloading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Generating PDF...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" /> Download Report PDF
+                </>
+              )}
             </button>
             <Link
               to="/start-interview"
@@ -348,7 +540,6 @@ const ResultsPage = () => {
               </div>
             </div>
           </footer>
-
         </div>
       </main>
     </div>

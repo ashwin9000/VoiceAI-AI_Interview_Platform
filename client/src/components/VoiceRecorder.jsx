@@ -1,13 +1,16 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Mic, MicOff, Square, Type } from 'lucide-react';
 
-const VoiceRecorder = ({ onTranscript, disabled = false }) => {
+const VoiceRecorder = forwardRef(({ onTranscript, disabled = false }, ref) => {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [isSupported, setIsSupported] = useState(true);
   const [useTextInput, setUseTextInput] = useState(false);
   const recognitionRef = useRef(null);
   const textareaRef = useRef(null);
+  // Stores finalized text from previous recording sessions so re-pressing
+  // spacebar continues from where the user left off instead of resetting.
+  const accumulatedTextRef = useRef('');
 
   // Check if Web Speech API is supported
   useEffect(() => {
@@ -28,19 +31,21 @@ const VoiceRecorder = ({ onTranscript, disabled = false }) => {
     recognition.interimResults = true;
     recognition.lang = 'en-US';
 
-    let finalTranscript = '';
+    // Carry over text from previous sessions
+    const previousText = accumulatedTextRef.current;
+    let sessionFinalTranscript = '';
 
     recognition.onresult = (event) => {
       let interimTranscript = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (result.isFinal) {
-          finalTranscript += result[0].transcript + ' ';
+          sessionFinalTranscript += result[0].transcript + ' ';
         } else {
           interimTranscript += result[0].transcript;
         }
       }
-      const combined = (finalTranscript + interimTranscript).trim();
+      const combined = (previousText + sessionFinalTranscript + interimTranscript).trim();
       setTranscript(combined);
       onTranscript?.(combined);
     };
@@ -51,17 +56,23 @@ const VoiceRecorder = ({ onTranscript, disabled = false }) => {
         setIsSupported(false);
         setUseTextInput(true);
       }
+      // Persist whatever was finalized in this session before the error
+      if (sessionFinalTranscript) {
+        accumulatedTextRef.current = (previousText + sessionFinalTranscript).trim() + ' ';
+      }
       setIsRecording(false);
     };
 
     recognition.onend = () => {
+      // Persist the finalized transcript from this session
+      accumulatedTextRef.current = (previousText + sessionFinalTranscript).trim() + ' ';
       setIsRecording(false);
     };
 
     return recognition;
   }, [onTranscript]);
 
-  // Start recording
+  // Start recording — continues from previous transcript
   const startRecording = useCallback(() => {
     if (disabled || useTextInput) return;
     
@@ -71,7 +82,7 @@ const VoiceRecorder = ({ onTranscript, disabled = false }) => {
     recognitionRef.current = recognition;
     recognition.start();
     setIsRecording(true);
-    setTranscript('');
+    // Don't clear transcript — we accumulate across sessions
   }, [disabled, useTextInput, initRecognition]);
 
   // Stop recording
@@ -120,6 +131,16 @@ const VoiceRecorder = ({ onTranscript, disabled = false }) => {
       }
     };
   }, []);
+
+  // Expose clearTranscript to parent via ref
+  useImperativeHandle(ref, () => ({
+    clearTranscript: () => {
+      setTranscript('');
+      accumulatedTextRef.current = '';
+      onTranscript?.('');
+      if (isRecording) stopRecording();
+    },
+  }), [onTranscript, isRecording, stopRecording]);
 
   // Handle text input change
   const handleTextChange = (e) => {
@@ -214,6 +235,8 @@ const VoiceRecorder = ({ onTranscript, disabled = false }) => {
       )}
     </div>
   );
-};
+});
+
+VoiceRecorder.displayName = 'VoiceRecorder';
 
 export default VoiceRecorder;

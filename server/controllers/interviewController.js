@@ -2,16 +2,16 @@ const Interview = require('../models/Interview');
 const Report = require('../models/Report');
 const { extractText } = require('../utils/textExtractor');
 const { analyzeResume } = require('../services/resumeAnalyzer');
-const { generateQuestions } = require('../services/questionGenerator');
+const { generateInitialQuestion, generateNextQuestion } = require('../services/questionGenerator');
 const { evaluateInterview } = require('../services/evaluationService');
 
 /**
  * Interview Controller.
- * Handles interview lifecycle: start, list, get, answer, and complete.
+ * Handles interview lifecycle: start, list, get, answer (with dynamic next-question), and complete.
  */
 
 /**
- * @desc    Start a new interview session
+ * @desc    Start a new interview session (generates only the first question)
  * @route   POST /api/interviews/start
  * @access  Private
  */
@@ -52,17 +52,27 @@ const startInterview = async (req, res, next) => {
     // Analyze resume using Gemini AI
     const resumeAnalysis = await analyzeResume(resumeText);
 
-    // Generate interview questions using Gemini AI
-    const questions = await generateQuestions(resumeAnalysis, role, jobDescText);
+    // Generate only the FIRST interview question (resume-based)
+    const firstQuestion = await generateInitialQuestion(resumeAnalysis, role, jobDescText);
 
-    // Create interview document
+    // Create interview document with initial state
     const interview = await Interview.create({
       userId: req.user._id,
       role,
       resumeUrl,
       resumeText,
       jobDescText,
-      questions,
+      resumeAnalysis,
+      questions: [firstQuestion],
+      questionState: {
+        resumeQuestionsAsked: 1,
+        technicalAsked: 0,
+        conceptualAsked: 0,
+        behavioralAsked: 0,
+        currentFollowUpCount: 0,
+        currentResumeTopics: firstQuestion.topicCovered ? [firstQuestion.topicCovered] : [],
+        interviewPhase: 'resume',
+      },
       status: 'in-progress',
     });
 
@@ -75,7 +85,11 @@ const startInterview = async (req, res, next) => {
           status: interview.status,
           createdAt: interview.createdAt,
         },
-        questions: interview.questions,
+        firstQuestion: {
+          index: 0,
+          ...firstQuestion,
+        },
+        questionState: interview.questionState,
       },
     });
   } catch (error) {
@@ -138,7 +152,7 @@ const getInterview = async (req, res, next) => {
 };
 
 /**
- * @desc    Submit an answer for a specific question
+ * @desc    Submit an answer and dynamically generate the next question
  * @route   PUT /api/interviews/:id/answer
  * @access  Private
  */
@@ -185,15 +199,40 @@ const submitAnswer = async (req, res, next) => {
       timestamp: new Date(),
     });
 
+    // Generate the next question dynamically
+    const { question: nextQuestion, updatedState, isComplete } = await generateNextQuestion(interview);
+
+    // Update the question state
+    interview.questionState = updatedState;
+
+    if (nextQuestion && !isComplete) {
+      // Append the new question to the interview
+      interview.questions.push(nextQuestion);
+    }
+
     await interview.save();
+
+    // Build response
+    const responseData = {
+      message: 'Answer submitted successfully.',
+      answersCount: interview.answers.length,
+      isComplete,
+      questionState: updatedState,
+    };
+
+    if (nextQuestion && !isComplete) {
+      responseData.nextQuestion = {
+        index: interview.questions.length - 1,
+        text: nextQuestion.text,
+        type: nextQuestion.type,
+        difficulty: nextQuestion.difficulty,
+        isFollowUp: nextQuestion.isFollowUp,
+      };
+    }
 
     res.status(200).json({
       success: true,
-      data: {
-        message: 'Answer submitted successfully.',
-        answersCount: interview.answers.length,
-        totalQuestions: interview.questions.length,
-      },
+      data: responseData,
     });
   } catch (error) {
     next(error);
