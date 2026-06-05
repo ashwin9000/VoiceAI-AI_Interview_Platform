@@ -1,45 +1,6 @@
-@import "tailwindcss";
-
-@theme {
-  /* ── Fonts ── */
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-display: 'Outfit', 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-
-  /* ── Custom Brand Colors ── */
-  --color-navy: #1a1a5e;
-  --color-navy-light: #2d2d7a;
-  --color-navy-dark: #0f0f3d;
-  --color-indigo-primary: #3b3b8f;
-
-  /* ── Custom Animations ── */
-  --animate-fade-in: fadeIn 0.5s ease-out both;
-  --animate-fade-in-up: fadeInUp 0.6s ease-out both;
-  --animate-fade-in-down: fadeInDown 0.5s ease-out both;
-  --animate-scale-in: scaleIn 0.3s ease-out both;
-  --animate-float: float 6s ease-in-out infinite;
-
-  @keyframes fadeIn {
-    0% { opacity: 0; }
-    100% { opacity: 1; }
-  }
-  @keyframes fadeInUp {
-    0% { opacity: 0; transform: translateY(20px); }
-    100% { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes fadeInDown {
-    0% { opacity: 0; transform: translateY(-20px); }
-    100% { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes scaleIn {
-    0% { opacity: 0; transform: scale(0.9); }
-    100% { opacity: 1; transform: scale(1); }
-  }
-  @keyframes float {
-    0%, 100% { transform: translateY(0px); }
-    50% { transform: translateY(-10px); }
-  }
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /*
  * All custom styles go inside @layer so Tailwind utilities can override them.

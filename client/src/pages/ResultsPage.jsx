@@ -86,44 +86,6 @@ const ResultsPage = () => {
         return;
       }
 
-      // --- Resolve oklch → hex using Canvas 2D context ---
-      // html2canvas can't parse oklch() color functions from Tailwind CSS v4.
-      // Modern Chrome (111+) returns oklch from getComputedStyle as-is, so we
-      // force-convert via the canvas fillStyle setter (always returns sRGB hex).
-      const resolveColor = (cssColor) => {
-        if (!cssColor || typeof cssColor !== 'string') return cssColor;
-        if (!/oklch|oklab|lch\(|lab\(|color\(/.test(cssColor)) return cssColor;
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = canvas.height = 1;
-          const ctx = canvas.getContext('2d');
-          ctx.fillStyle = '#000000'; // reset baseline
-          ctx.fillStyle = cssColor;  // browser converts to sRGB
-          return ctx.fillStyle;      // getter always returns hex
-        } catch {
-          return '#000000';
-        }
-      };
-
-      const COLOR_PROPS = [
-        'color', 'backgroundColor', 'borderColor',
-        'borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor',
-        'outlineColor', 'textDecorationColor',
-      ];
-
-      // Pre-compute a color map from the LIVE DOM (before html2canvas clones it).
-      // Each entry maps index → { prop: resolvedHexColor }.
-      const originalEls = [element, ...element.querySelectorAll('*')];
-      const colorMap = originalEls.map((el) => {
-        const computed = window.getComputedStyle(el);
-        const resolved = {};
-        COLOR_PROPS.forEach((prop) => {
-          const val = computed[prop];
-          if (val) resolved[prop] = resolveColor(val);
-        });
-        return resolved;
-      });
-
       const opt = {
         margin: [0.4, 0.4, 0.4, 0.4],
         filename: `interview-report-${interview?.role || 'report'}.pdf`,
@@ -133,21 +95,6 @@ const ResultsPage = () => {
           backgroundColor: '#ffffff',
           useCORS: true,
           logging: false,
-          onclone: (_clonedDoc, clonedElement) => {
-            // Apply pre-computed hex colors as inline styles on html2canvas's
-            // internal clone. Inline styles override stylesheet oklch values,
-            // so the parser only sees hex/rgb — no more oklch errors.
-            const clonedEls = [clonedElement, ...clonedElement.querySelectorAll('*')];
-            clonedEls.forEach((el, i) => {
-              if (!colorMap[i]) return;
-              Object.entries(colorMap[i]).forEach(([prop, val]) => {
-                if (val) el.style[prop] = val;
-              });
-            });
-
-            // Remove SVG icons — they cause html2canvas rendering glitches
-            clonedElement.querySelectorAll('svg').forEach((svg) => svg.remove());
-          },
         },
         jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
@@ -159,8 +106,6 @@ const ResultsPage = () => {
       console.error('PDF generation error:', error);
       toast.error('Failed to generate PDF. Please try again.');
     } finally {
-      // Clean up any stale html2canvas clones/containers that could block the page
-      document.querySelectorAll('.html2canvas-container, [data-html2canvas-clone]').forEach((el) => el.remove());
       setIsDownloading(false);
     }
   };
