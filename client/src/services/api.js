@@ -80,6 +80,12 @@ export const reportAPI = {
     api.get(`/reports/${interviewId}`),
 };
 
+// ===== AssemblyAI API =====
+export const assemblyaiAPI = {
+  // Get a temporary streaming token for browser-based real-time STT
+  getToken: () => api.get('/assemblyai/token'),
+};
+
 // ===== Chat API =====
 export const chatAPI = {
   // Reindex user's interview data in the vector store

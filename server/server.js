@@ -14,6 +14,7 @@ const authRoutes = require('./routes/authRoutes');
 const interviewRoutes = require('./routes/interviewRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const chatRoutes = require('./routes/chatRoutes');
+const assemblyaiRoutes = require('./routes/assemblyaiRoutes');
 
 // Middleware imports
 const errorHandler = require('./middleware/errorHandler');
@@ -54,6 +55,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/interviews', interviewRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/assemblyai', assemblyaiRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

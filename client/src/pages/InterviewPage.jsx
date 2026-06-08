@@ -1,14 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { interviewAPI } from '../services/api';
+import ttsService from '../services/ttsService';
 
 import LoadingSpinner from '../components/LoadingSpinner';
 import VoiceRecorder from '../components/VoiceRecorder';
+import AudioWaveform from '../components/AudioWaveform';
 import toast from 'react-hot-toast';
 import {
   BrainCircuit, AlertTriangle,
   X, CheckCircle2, Mic, ArrowRight, Clock,
-  User, Check, Send, Loader2, MessageCircle, Eraser
+  User, Check, Send, Loader2, MessageCircle, Eraser,
+  Volume2, VolumeX
 } from 'lucide-react';
 
 /**
@@ -44,9 +47,14 @@ const InterviewPage = () => {
   const [isCompleting, setIsCompleting] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
+  // TTS state
+  const [isTTSEnabled, setIsTTSEnabled] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
   const timerRef = useRef(null);
   const historyEndRef = useRef(null);
   const voiceRecorderRef = useRef(null);
+  const lastSpokenQuestionRef = useRef(null);
 
   // Fetch interview on mount
   useEffect(() => {
@@ -135,6 +143,47 @@ const InterviewPage = () => {
     }
   }, [conversationHistory, currentQuestion]);
 
+  // ──────────────────────────────────────────────
+  // TTS — Auto-speak new questions
+  // ──────────────────────────────────────────────
+
+  useEffect(() => {
+    // Wire up TTS callbacks
+    ttsService.onStart = () => setIsSpeaking(true);
+    ttsService.onEnd = () => setIsSpeaking(false);
+    ttsService.onError = () => setIsSpeaking(false);
+
+    return () => {
+      ttsService.destroy();
+    };
+  }, []);
+
+  // Speak the current question when it changes
+  useEffect(() => {
+    if (currentQuestion?.text && currentQuestion.text !== lastSpokenQuestionRef.current) {
+      lastSpokenQuestionRef.current = currentQuestion.text;
+      ttsService.speak(currentQuestion.text);
+    }
+  }, [currentQuestion]);
+
+  // Sync TTS enabled state
+  useEffect(() => {
+    ttsService.setEnabled(isTTSEnabled);
+  }, [isTTSEnabled]);
+
+  const toggleTTS = useCallback(() => {
+    setIsTTSEnabled(prev => !prev);
+  }, []);
+
+  // Stop TTS when user starts recording (barge-in)
+  const handleRecordingStart = useCallback(() => {
+    ttsService.stop();
+  }, []);
+
+  const handleRecordingStop = useCallback(() => {
+    // No-op for now, but available for future use
+  }, []);
+
   const formatTimer = (seconds) => {
     const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
     const secs = (seconds % 60).toString().padStart(2, '0');
@@ -162,6 +211,8 @@ const InterviewPage = () => {
       return;
     }
 
+    // Stop TTS before submitting
+    ttsService.stop();
     setIsSubmittingAnswer(true);
 
     try {
@@ -184,8 +235,9 @@ const InterviewPage = () => {
         },
       ]);
 
-      // Clear current answer
+      // Clear current answer and voice recorder
       setCurrentAnswer('');
+      voiceRecorderRef.current?.clearTranscript();
 
       // Update question state
       if (data.questionState) {
@@ -199,7 +251,7 @@ const InterviewPage = () => {
         if (timerRef.current) clearInterval(timerRef.current);
         toast.success('All questions completed! You can now end the interview.');
       } else if (data.nextQuestion) {
-        // Set the new question
+        // Set the new question (TTS will auto-speak via useEffect)
         setCurrentQuestion({
           index: data.nextQuestion.index,
           text: data.nextQuestion.text,
@@ -349,6 +401,20 @@ const InterviewPage = () => {
             </div>
 
             <div className="flex items-center gap-3">
+              {/* TTS Toggle */}
+              <button
+                onClick={toggleTTS}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                  isTTSEnabled
+                    ? 'text-[#000666] bg-[#eef2ff] border-[#e0e0ff] hover:bg-[#e0e0ff]'
+                    : 'text-[#767683] bg-gray-50 border-gray-200 hover:bg-gray-100'
+                }`}
+                title={isTTSEnabled ? 'Disable AI voice' : 'Enable AI voice'}
+              >
+                {isTTSEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">{isTTSEnabled ? 'Voice On' : 'Voice Off'}</span>
+              </button>
+
               <div className="flex items-center gap-2 bg-[#f7f9fb] border border-[#e5e7eb] rounded-full px-4 py-1.5">
                 <Clock className="w-4 h-4 text-[#000666]" />
                 <span className="text-sm font-mono font-semibold text-[#191c1e] tracking-wider">
@@ -376,15 +442,26 @@ const InterviewPage = () => {
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-blue-200/30 rounded-full blur-3xl" />
             </div>
 
-            {/* AI Bot Icon */}
+            {/* AI Bot Icon + Speaking Indicator */}
             <div className="relative z-10 flex flex-col items-center gap-3">
-              <div className="w-20 h-20 rounded-3xl bg-white/80 backdrop-blur-sm shadow-lg flex items-center justify-center border border-white/60">
+              <div className={`w-20 h-20 rounded-3xl bg-white/80 backdrop-blur-sm shadow-lg flex items-center justify-center border border-white/60 transition-all duration-300 ${
+                isSpeaking ? 'ring-4 ring-[#000666]/20 scale-105' : ''
+              }`}>
                 <BrainCircuit className="w-10 h-10 text-[#000666]" />
               </div>
-              <div className="flex items-center gap-2 bg-white/70 backdrop-blur-sm rounded-full px-4 py-1.5 border border-white/50">
-                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-xs font-medium text-[#191c1e]">AI Interviewer Active</span>
-              </div>
+
+              {/* Speaking indicator with waveform */}
+              {isSpeaking ? (
+                <div className="flex items-center gap-2 bg-[#000666]/90 backdrop-blur-sm rounded-full px-4 py-1.5 border border-[#000666]/30">
+                  <AudioWaveform isActive={true} barCount={4} className="h-4" />
+                  <span className="text-xs font-medium text-white">Speaking...</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 bg-white/70 backdrop-blur-sm rounded-full px-4 py-1.5 border border-white/50">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-xs font-medium text-[#191c1e]">AI Interviewer Active</span>
+                </div>
+              )}
             </div>
 
             {/* Webcam feed simulation – top-right */}
@@ -484,6 +561,8 @@ const InterviewPage = () => {
                   key={currentQuestionIndex}
                   onTranscript={handleTranscript}
                   disabled={isSubmittingAnswer}
+                  onRecordingStart={handleRecordingStart}
+                  onRecordingStop={handleRecordingStop}
                 />
 
                 {/* Clear Answer Button */}
