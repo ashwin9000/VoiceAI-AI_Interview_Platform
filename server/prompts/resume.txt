@@ -1,0 +1,39 @@
+Gopishetty Sukumar
+shettysukumar251@gmail.com | linkedin.com/in/sukumar-gopishetty | github.com/sukumar9458
+Education
+Keshav Memorial Institute of Technology
+B.Tech in Computer Science
+Keshav Smarak Junior College
+Intermediate
+2023– Present
+CGPA: 8.9
+2021– 2023
+Marks: 965
+Skills
+Programming Languages: Java, Python, C++, C, JavaScript
+Web Technologies: React.js, Node.js, Express.js, REST APIs
+Databases: MySQL, MongoDB
+AI/ML: CNN, Transformers, ANN, Scikit-Learn, PyTorch
+DevOps & Tools: Git, GitHub, Docker, Jenkins, AWS
+Course Work:DBMS, Multithreading, DataStrucutres, Operating Systems
+Projects
+Adaptive Learning Path | React, Node.js, Flask, MediaPipe, Transformers, Gemini API
+GitHub– Engineered a full-stack adaptive learning platform to personalize educational content based on user performance and
+engagement metrics.– Implemented real-time facial emotion recognition using MediaPipe Face Mesh and a Transformer-based deep learning
+model.– Designed a predictive pipeline combining quiz performance and emotional signals to dynamically adjust learning
+difficulty levels.– Integrated Google Gemini API to generate context-aware, personalized quizzes, enhancing user engagement and
+learning efficiency.
+Sentiment Analysis for Stock Movement Prediction | React, Node.js, NLP, Flask, TensorFlow
+GitHub– Developed a data-driven application to analyze the impact of public sentiment on stock price movements using Reddit
+data.– Implemented NLP pipelines for text preprocessing, feature extraction, and sentiment classification (positive, negative,
+neutral).– Aggregated sentiment scores over time and performed correlation analysis with historical stock price trends.– Built interactive visualizations to compare sentiment trends with market data, enabling insight-driven decision
+analysis.
+DocuMind | React.js, Flask, LangChain, ChromaDB, Sentence Transformers, Gemini 2.5 Flash GitHub– Engineered a full-stack document intelligence system enabling semantic search and question answering over
+unstructured PDF/TXT data.– Designed an end-to-end Retrieval-Augmented Generation (RAG) pipeline using LangChain for chunking, embedding,
+and context retrieval.– Implemented vector-based semantic search using Sentence Transformers and ChromaDB to retrieve top-K relevant
+document chunks via cosine similarity.– Integrated Gemini 2.5 Flash to generate accurate, context-aware answers with source attribution, and built a
+responsive React UI for seamless interaction.
+Additional Information
+Certifications: Project Completion Certificate-KMIT
+Activities: CBIT Hacktoberfest Hackathon (2025)
+Skills: Problem Solving,Logical and Analytical Thinking, Team Collaboration
