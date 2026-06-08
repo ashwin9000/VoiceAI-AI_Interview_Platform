@@ -44,6 +44,8 @@ const renderMarkdown = (text) => {
   let html = '';
   let inCodeBlock = false;
   let inList = false;
+  let inTable = false;
+  let tableHeaderDone = false;
 
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i];
@@ -55,6 +57,7 @@ const renderMarkdown = (text) => {
         inCodeBlock = false;
       } else {
         if (inList) { html += '</ul>'; inList = false; }
+        if (inTable) { html += '</tbody></table>'; inTable = false; tableHeaderDone = false; }
         html += '<pre class="chat-code-block"><code>';
         inCodeBlock = true;
       }
@@ -62,6 +65,56 @@ const renderMarkdown = (text) => {
     }
     if (inCodeBlock) {
       html += escapeHtml(line) + '\n';
+      continue;
+    }
+
+    // Table rows — lines that start and end with |
+    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+      const trimmed = line.trim();
+
+      // Check if this is a separator row like | :--- | :--- |
+      if (/^\|[\s:]*-{2,}[\s:]*(\|[\s:]*-{2,}[\s:]*)*\|$/.test(trimmed)) {
+        // Skip separator row, but mark that the header is done
+        tableHeaderDone = true;
+        continue;
+      }
+
+      // Parse cells: split by |, trim, drop empty first/last
+      const cells = trimmed.split('|').slice(1, -1).map(c => c.trim());
+
+      if (!inTable) {
+        // Start a new table — this first row is the header
+        if (inList) { html += '</ul>'; inList = false; }
+        html += '<table class="chat-table"><thead><tr>';
+        cells.forEach(cell => {
+          html += `<th>${processInline(cell)}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+        inTable = true;
+        tableHeaderDone = false;
+        continue;
+      }
+
+      // Regular body row
+      html += '<tr>';
+      cells.forEach(cell => {
+        html += `<td>${processInline(cell)}</td>`;
+      });
+      html += '</tr>';
+      continue;
+    }
+
+    // Close table if we were in one and hit a non-table line
+    if (inTable) {
+      html += '</tbody></table>';
+      inTable = false;
+      tableHeaderDone = false;
+    }
+
+    // Horizontal rule
+    if (/^\s*[-*_]{3,}\s*$/.test(line)) {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += '<hr class="chat-hr"/>';
       continue;
     }
 
@@ -116,6 +169,7 @@ const renderMarkdown = (text) => {
   }
 
   if (inList) html += '</ul>';
+  if (inTable) html += '</tbody></table>';
   if (inCodeBlock) html += '</code></pre>';
 
   return html;
@@ -126,6 +180,8 @@ const escapeHtml = (str) =>
 
 const processInline = (text) => {
   let result = escapeHtml(text);
+  // Links — must come before bold/italic to avoid mangling [text](url)
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   // Bold
   result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   // Italic
@@ -303,8 +359,9 @@ const ChatPage = () => {
   const hasMessages = messages.length > 0;
 
   return (
-    <div className="page-enter min-h-screen bg-[#f7f9fb]">
+    <>
       <Sidebar activePath="/chat" />
+      <div className="page-enter min-h-screen bg-[#f7f9fb]">
 
       <main className="md:ml-[220px] min-h-screen flex flex-col">
         {/* Header */}
@@ -502,7 +559,8 @@ const ChatPage = () => {
           </form>
         </div>
       </main>
-    </div>
+      </div>
+    </>
   );
 };
 

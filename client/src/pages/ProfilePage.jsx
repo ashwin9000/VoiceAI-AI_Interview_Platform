@@ -106,8 +106,9 @@ const ProfilePage = () => {
   };
 
   return (
-    <div className="page-enter min-h-screen bg-[#f7f9fb]">
+    <>
       <Sidebar activePath="/profile" />
+      <div className="page-enter min-h-screen bg-[#f7f9fb]">
 
       <main className="md:ml-[220px] min-h-screen p-6 md:p-8">
         {/* ── Header ── */}
@@ -426,7 +427,8 @@ const ProfilePage = () => {
           </>
         )}
       </main>
-    </div>
+      </div>
+    </>
   );
 };
 

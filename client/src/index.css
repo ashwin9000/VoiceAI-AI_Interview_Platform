@@ -259,7 +259,7 @@
   /* ===== Sidebar Styles ===== */
   .sidebar {
     width: 220px;
-    min-height: 100vh;
+    height: 100vh;
     background: #f8f9fb;
     border-right: 1px solid #e5e7eb;
     display: flex;
@@ -269,6 +269,7 @@
     left: 0;
     top: 0;
     z-index: 40;
+    overflow-y: auto;
   }
   .sidebar-link {
     display: flex;
@@ -380,6 +381,53 @@
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.8rem;
     line-height: 1.6;
+  }
+
+  /* Chat table styles */
+  .chat-content .chat-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 0.82rem;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+  }
+  .chat-content .chat-table th {
+    background: #f1f5f9;
+    color: #1a1a5e;
+    font-weight: 600;
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 2px solid #e5e7eb;
+    white-space: nowrap;
+  }
+  .chat-content .chat-table td {
+    padding: 7px 12px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #374151;
+    vertical-align: top;
+  }
+  .chat-content .chat-table tbody tr:nth-child(even) {
+    background: #f9fafb;
+  }
+  .chat-content .chat-table tbody tr:hover {
+    background: #eef2ff;
+  }
+  .chat-content .chat-table a {
+    color: #4338ca;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .chat-content .chat-table a:hover {
+    color: #1a1a5e;
+  }
+
+  /* Chat horizontal rule */
+  .chat-content .chat-hr {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 14px 0;
   }
 }
 

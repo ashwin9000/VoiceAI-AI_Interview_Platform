@@ -122,19 +122,22 @@ const ResultsPage = () => {
 
   if (loading) {
     return (
-      <div className="page-enter min-h-screen bg-[#f7f9fb]">
+      <>
         <Sidebar activePath="/results" />
+        <div className="page-enter min-h-screen bg-[#f7f9fb]">
         <main className="md:ml-[220px] min-h-screen flex items-center justify-center p-6 md:p-8">
           <LoadingSpinner size="lg" text="Loading your results..." />
         </main>
-      </div>
+        </div>
+      </>
     );
   }
 
   if (!report) {
     return (
-      <div className="page-enter min-h-screen bg-[#f7f9fb]">
+      <>
         <Sidebar activePath="/results" />
+        <div className="page-enter min-h-screen bg-[#f7f9fb]">
         <main className="md:ml-[220px] min-h-screen flex items-center justify-center p-6 md:p-8">
           <div className="text-center">
             <p className="text-[#767683] mb-4">Report not found</p>
@@ -143,7 +146,8 @@ const ResultsPage = () => {
             </Link>
           </div>
         </main>
-      </div>
+        </div>
+      </>
     );
   }
 
@@ -172,8 +176,9 @@ const ResultsPage = () => {
   ];
 
   return (
-    <div className="page-enter min-h-screen bg-[#f7f9fb]">
+    <>
       <Sidebar activePath="/results" />
+      <div className="page-enter min-h-screen bg-[#f7f9fb]">
 
       <main className="md:ml-[220px] min-h-screen p-6 md:p-8">
         <div className="max-w-5xl mx-auto" ref={reportRef}>
@@ -487,7 +492,8 @@ const ResultsPage = () => {
           </footer>
         </div>
       </main>
-    </div>
+      </div>
+    </>
   );
 };
 
