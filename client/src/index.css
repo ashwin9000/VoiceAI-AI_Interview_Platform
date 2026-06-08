@@ -453,6 +453,44 @@
   40% { transform: scale(1); opacity: 1; }
 }
 
+/* ===== Inference Loader Animations ===== */
+@keyframes inferenceRing {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+@keyframes inferenceRing2 {
+  0%, 100% { transform: scale(1); opacity: 0.3; }
+  50% { transform: scale(1.12); opacity: 0.7; }
+}
+@keyframes inferenceRing3 {
+  0%, 100% { transform: scale(1); opacity: 0.2; }
+  50% { transform: scale(1.15); opacity: 0.5; }
+}
+@keyframes inferenceCore {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 40px rgba(99, 102, 241, 0.3); }
+  50% { transform: scale(1.05); box-shadow: 0 0 70px rgba(99, 102, 241, 0.5); }
+}
+@keyframes inferenceOrbit {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes inferenceShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.inference-ring-1 { animation: inferenceRing 2.5s ease-in-out infinite; }
+.inference-ring-2 { animation: inferenceRing2 3s ease-in-out infinite 0.3s; }
+.inference-ring-3 { animation: inferenceRing3 3.5s ease-in-out infinite 0.6s; }
+.inference-core   { animation: inferenceCore 2s ease-in-out infinite; }
+.inference-orbit  { animation: inferenceOrbit 4s linear infinite; }
+.inference-orbit-reverse { animation: inferenceOrbit 5s linear infinite reverse; }
+.inference-orbit-slow    { animation: inferenceOrbit 7s linear infinite; }
+.inference-shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%);
+  animation: inferenceShimmer 1.5s ease-in-out infinite;
+}
+
 /* ===== Reduced Motion ===== */
 @media (prefers-reduced-motion: reduce) {
   *,

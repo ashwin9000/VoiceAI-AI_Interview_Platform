@@ -1,10 +1,10 @@
 import { useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
+import InferenceLoader from '../components/InferenceLoader';
 import { interviewAPI } from '../services/api';
 import { ROLES } from '../utils/constants';
 import toast from 'react-hot-toast';
-import LoadingSpinner from '../components/LoadingSpinner';
 import {
   CloudUpload, FileText, Trash2, Lock, Globe, Settings2,
   ChevronLeft, CheckCircle2, ChevronDown
@@ -12,7 +12,9 @@ import {
 
 const LOADING_STEPS = [
   'Uploading document...',
-  'Analyzing resume content...',
+  'Extracting text from resume...',
+  'Inferencing locally with on-device AI...',
+  'Parsing skills, experience & projects...',
   'Generating first interview question...',
   'Preparing interview environment...',
 ];
@@ -74,7 +76,7 @@ const StartInterviewPage = () => {
 
     const stepInterval = setInterval(() => {
       setLoadingStep((prev) => prev < LOADING_STEPS.length - 1 ? prev + 1 : prev);
-    }, 2500);
+    }, 3000);
 
     try {
       const formData = new FormData();
@@ -99,31 +101,10 @@ const StartInterviewPage = () => {
     return (
       <>
         <Sidebar />
-        <div className="page-enter min-h-screen bg-[#f7f9fb] flex">
-          <main className="md:ml-[220px] flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <LoadingSpinner size="xl" className="mb-6" />
-            <div className="space-y-3 max-w-xs mx-auto">
-              {LOADING_STEPS.map((step, i) => (
-                <div
-                  key={i}
-                  className={`flex items-center gap-2.5 text-sm transition-all duration-300 ${
-                    i <= loadingStep ? 'text-[#000666] opacity-100' : 'text-[#c6c5d4] opacity-50'
-                  }`}
-                >
-                  {i < loadingStep ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                  ) : i === loadingStep ? (
-                    <div className="w-4 h-4 border-2 border-[#000666] border-t-transparent rounded-full animate-spin shrink-0" />
-                  ) : (
-                    <div className="w-4 h-4 rounded-full border-2 border-[#c6c5d4] shrink-0" />
-                  )}
-                  <span className="font-medium">{step}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </main>
+        <div className="page-enter flex">
+          <main className="md:ml-[220px] flex-1">
+            <InferenceLoader steps={LOADING_STEPS} currentStep={loadingStep} />
+          </main>
         </div>
       </>
     );
