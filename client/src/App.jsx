@@ -12,6 +12,7 @@ import ProfilePage from './pages/ProfilePage';
 import StartInterviewPage from './pages/StartInterviewPage';
 import InterviewPage from './pages/InterviewPage';
 import ResultsPage from './pages/ResultsPage';
+import ChatPage from './pages/ChatPage';
 
 function App() {
   return (
@@ -90,6 +91,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <ResultsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/chat"
+            element={
+              <ProtectedRoute>
+                <ChatPage />
               </ProtectedRoute>
             }
           />

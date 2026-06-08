@@ -13,6 +13,7 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const interviewRoutes = require('./routes/interviewRoutes');
 const reportRoutes = require('./routes/reportRoutes');
+const chatRoutes = require('./routes/chatRoutes');
 
 // Middleware imports
 const errorHandler = require('./middleware/errorHandler');
@@ -52,6 +53,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/auth', authRoutes);
 app.use('/api/interviews', interviewRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

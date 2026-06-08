@@ -312,6 +312,75 @@
     color: #1a1a5e;
     flex-shrink: 0;
   }
+
+  /* ===== Chat Styles ===== */
+  .chat-message-enter {
+    animation: chatSlideIn 0.3s ease-out both;
+  }
+
+  .typing-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #767683;
+    animation: typingBounce 1.4s infinite ease-in-out;
+  }
+  .typing-dot:nth-child(1) { animation-delay: 0s; }
+  .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+  /* Chat markdown content */
+  .chat-content .chat-h2 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #191c1e;
+    margin: 12px 0 6px;
+  }
+  .chat-content .chat-h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #191c1e;
+    margin: 10px 0 4px;
+  }
+  .chat-content .chat-h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #454652;
+    margin: 8px 0 4px;
+  }
+  .chat-content .chat-p {
+    margin: 4px 0;
+  }
+  .chat-content .chat-list {
+    margin: 4px 0 4px 16px;
+    padding: 0;
+    list-style-type: disc;
+  }
+  .chat-content .chat-list-ordered {
+    list-style-type: decimal;
+  }
+  .chat-content .chat-list li {
+    margin: 2px 0;
+  }
+  .chat-content .chat-inline-code {
+    background: #f1f5f9;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85em;
+    color: #1a1a5e;
+  }
+  .chat-content .chat-code-block {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin: 8px 0;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
 }
 
 /* ===== Keyframes (outside layers — they're global by nature) ===== */
@@ -326,6 +395,14 @@
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
+}
+@keyframes chatSlideIn {
+  0% { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes typingBounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
 }
 
 /* ===== Reduced Motion ===== */

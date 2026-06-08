@@ -26,7 +26,7 @@ const Navbar = () => {
   const isActive = (path) => location.pathname === path;
 
   // Hide navbar on pages that use the Sidebar component
-  const sidebarPages = ['/dashboard', '/profile', '/interview', '/results'];
+  const sidebarPages = ['/dashboard', '/profile', '/interview', '/results', '/chat'];
   const onSidebarPage = sidebarPages.some(p => location.pathname.startsWith(p));
   if (onSidebarPage) return null;
   if (location.pathname === '/' && !isAuthenticated) return null;

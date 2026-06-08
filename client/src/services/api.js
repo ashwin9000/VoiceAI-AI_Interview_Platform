@@ -80,4 +80,13 @@ export const reportAPI = {
     api.get(`/reports/${interviewId}`),
 };
 
+// ===== Chat API =====
+export const chatAPI = {
+  // Reindex user's interview data in the vector store
+  reindex: () => api.post('/chat/reindex'),
+
+  // Get chat history for a session
+  getHistory: (sessionId) => api.get(`/chat/history/${sessionId}`),
+};
+
 export default api;

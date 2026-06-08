@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# ChromaDB persistent data
+chroma_data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db

@@ -4,11 +4,12 @@ import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import {
   BrainCircuit, LayoutDashboard, Users, TrendingUp, Settings,
-  HelpCircle, LogOut, Plus, Menu, X
+  HelpCircle, LogOut, Plus, Menu, X, MessageSquare
 } from 'lucide-react';
 
 const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/chat', label: 'Interview Assistant', icon: MessageSquare },
   { path: '/profile', label: 'Interviews', icon: Users },
   { path: '/dashboard', label: 'Analytics', icon: TrendingUp },
   { path: '/profile', label: 'Settings', icon: Settings },
@@ -61,6 +62,7 @@ const Sidebar = ({ activePath }) => {
           const isActive = active === item.path || (item.path === '/profile' && active === '/profile' && item.label === 'Settings');
           // Simple active matching
           const isItemActive = (item.label === 'Dashboard' && active === '/dashboard') ||
+            (item.label === 'Interview Assistant' && active === '/chat') ||
             (item.label === 'Interviews' && (active === '/profile' || active.startsWith('/results'))) ||
             (item.label === 'Settings' && active === '/settings');
           return (

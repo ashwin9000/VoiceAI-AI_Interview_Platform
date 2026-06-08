@@ -24,6 +24,9 @@ DESIGN.md
 .DS_Store
 Thumbs.db
 
+# ChromaDB persistence (RAG service)
+chroma_data/
+
 # Logs
 *.log
 npm-debug.log*
