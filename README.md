@@ -101,7 +101,7 @@ Generates per-dimension **strengths**, **areas of concern**, **practice suggesti
 
 ### Prerequisites
 - Node.js ≥ 18
-- Python ≥ 3.10
+- Python ≥ 3.11
 - MongoDB instance (local or Atlas)
 - llama.cpp built with Qwen 2.5 3B model downloaded
 - Gemini API key
@@ -115,8 +115,13 @@ cd VoiceAI-AI_Interview_Platform
 
 ### 2. Start the local LLM server
 ```bash
-# From your llama.cpp directory
-install llama.cpp and run
+for mac:
+brew install llama.cpp
+
+for windows:
+winget install llama.cpp
+
+then run:
 llama-server -hf Qwen/Qwen2.5-3B-Instruct-GGUF:Q4_K_M
 ```
 
