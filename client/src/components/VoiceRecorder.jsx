@@ -1,126 +1,301 @@
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Mic, MicOff, Square, Type, Wifi, WifiOff, Loader2 } from 'lucide-react';
+// import "onnxruntime-web";
+import { Mic, MicOff, Type, Wifi, WifiOff, Loader2, Radio, AudioLines } from 'lucide-react';
 import { AssemblyAISTT } from '../services/assemblyaiSTT';
+import { VADService } from '../services/vadService';
 import ttsService from '../services/ttsService';
 
 /**
- * VoiceRecorder — Speech-to-Text input component.
+ * VoiceRecorder — Automatic Voice Activity Detection (VAD) speech input.
  *
- * Uses AssemblyAI Streaming v3 as the primary STT provider.
- * Falls back to browser Web Speech API if AssemblyAI is unavailable.
- * Falls back to text input if neither voice API is supported.
+ * Uses Silero VAD (@ricky0123/vad-web) to automatically detect speech,
+ * then streams audio to AssemblyAI Streaming v3 for real-time transcription.
+ *
+ * No spacebar or manual controls needed — the user simply speaks.
+ *
+ * Architecture:
+ *   - Persistent AssemblyAI WebSocket connection (established once on mount)
+ *   - VAD gates audio forwarding (only sends audio when user is speaking)
+ *   - VAD is PAUSED while TTS is speaking (no automatic barge-in)
+ *   - User controls TTS via explicit "Stop Speaking" buttons in the parent
+ *
+ * Falls back to browser Web Speech API, then text input if unavailable.
  *
  * Props:
- *   onTranscript(text) — called with the accumulated transcript text
- *   disabled           — disables all input
- *   onRecordingStart() — called when recording begins (for TTS barge-in)
- *   onRecordingStop()  — called when recording stops
+ *   onTranscript(text)             — called with the accumulated transcript text
+ *   disabled                       — disables all input
+ *   onSpeechActivity(isSpeaking)   — called when VAD detects speech start/end
+ *   isTTSSpeaking                  — true when TTS is currently playing (pauses VAD)
  */
-const VoiceRecorder = forwardRef(({ onTranscript, disabled = false, onRecordingStart, onRecordingStop }, ref) => {
-  const [isRecording, setIsRecording] = useState(false);
+const VoiceRecorder = forwardRef(({ onTranscript, disabled = false, onSpeechActivity, isTTSSpeaking = false }, ref) => {
   const [transcript, setTranscript] = useState('');
   const [useTextInput, setUseTextInput] = useState(false);
   const [sttProvider, setSttProvider] = useState('none'); // 'assemblyai' | 'webspeech' | 'text' | 'none'
-  const [isConnecting, setIsConnecting] = useState(false);
+
+  // Connection states
+  const [connectionState, setConnectionState] = useState('idle'); // 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error'
   const [connectionError, setConnectionError] = useState(null);
+
+  // VAD states
+  const [vadState, setVadState] = useState('idle'); // 'idle' | 'listening' | 'speaking'
 
   // Refs
   const assemblyaiRef = useRef(null);
+  const vadRef = useRef(null);
   const recognitionRef = useRef(null);
   const accumulatedTextRef = useRef('');
   const textareaRef = useRef(null);
-  const isRecordingRef = useRef(false); // for key event handlers
+  const mountedRef = useRef(true);
+  const mediaStreamRef = useRef(null);
 
-  // Keep isRecordingRef in sync
+  // ──────────────────────────────────────────────
+  // Initialize AssemblyAI + VAD (once on mount)
+  // ──────────────────────────────────────────────
+
   useEffect(() => {
-    isRecordingRef.current = isRecording;
-  }, [isRecording]);
+    // Per-invocation cancellation flag — prevents React StrictMode's double-mount
+    // from running two init pipelines concurrently. Unlike mountedRef (a shared ref
+    // that mount #2 sets back to true), this stays true for mount #1's closure.
+    let cancelled = false;
 
-  // ──────────────────────────────────────────────
-  // AssemblyAI STT Management
-  // ──────────────────────────────────────────────
+    const initPipeline = async () => {
+      // Token availability check removed — it consumed a real single-use token
+      // just to verify the endpoint. stt.init() handles failure and triggers fallback.
+      if (cancelled) return;
 
-  const initAssemblyAI = useCallback(() => {
-    if (assemblyaiRef.current) return assemblyaiRef.current;
+      setSttProvider('assemblyai');
+      setConnectionState('connecting');
 
-    const stt = new AssemblyAISTT();
-
-    stt.onTranscript = (text, isFinal) => {
-      const combined = text;
-      setTranscript(combined);
-      onTranscript?.(combined);
-    };
-
-    stt.onError = (error) => {
-      console.error('[VoiceRecorder] AssemblyAI error:', error);
-      setConnectionError(error.message || 'Connection error');
-    };
-
-    stt.onFallbackNeeded = () => {
-      console.warn('[VoiceRecorder] Falling back to Web Speech API.');
-      setSttProvider('webspeech');
-      setConnectionError('AssemblyAI unavailable — using browser speech recognition');
-      // Clear the error after 5s
-      setTimeout(() => setConnectionError(null), 5000);
-    };
-
-    stt.onSessionStart = () => {
-      setIsConnecting(false);
-      setConnectionError(null);
-    };
-
-    assemblyaiRef.current = stt;
-    return stt;
-  }, [onTranscript]);
-
-  // ──────────────────────────────────────────────
-  // AssemblyAI Recording
-  // ──────────────────────────────────────────────
-
-  const startAssemblyAI = useCallback(async () => {
-    if (disabled || useTextInput) return;
-
-    // Stop TTS when user starts recording (barge-in)
-    ttsService.stop();
-    onRecordingStart?.();
-
-    setIsConnecting(true);
-    setIsRecording(true);
-
-    const stt = initAssemblyAI();
-
-    // Prepend any accumulated text from previous sessions
-    const previousText = accumulatedTextRef.current;
-    if (previousText) {
-      stt.clearTranscript();
-      stt._finalTranscript = previousText.trim();
-    }
-
-    const connected = await stt.connect();
-
-    if (!connected) {
-      // Fallback triggered inside connect()
-      setIsRecording(false);
-      setIsConnecting(false);
-      return;
-    }
-  }, [disabled, useTextInput, initAssemblyAI, onRecordingStart]);
-
-  const stopAssemblyAI = useCallback(async () => {
-    if (assemblyaiRef.current) {
-      // Save accumulated transcript before disconnecting
-      const currentText = assemblyaiRef.current.getTranscript();
-      if (currentText) {
-        accumulatedTextRef.current = currentText.trim() + ' ';
+      // Step 2: Acquire microphone once
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: false,
+            sampleRate: 16000,
+            channelCount: 1,
+          },
+        });
+      } catch (err) {
+        console.error('[VoiceRecorder] Microphone access denied:', err.message);
+        if (!cancelled) fallbackToWebSpeech();
+        return;
       }
-      await assemblyaiRef.current.disconnect();
-    }
-    setIsRecording(false);
-    onRecordingStop?.();
-  }, [onRecordingStop]);
+
+      if (cancelled) {
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
+
+      mediaStreamRef.current = stream;
+
+      // Step 3: Initialize AssemblyAI with shared stream
+      const stt = new AssemblyAISTT();
+
+      stt.onTranscript = (text, isFinal) => {
+        if (cancelled) return;
+        console.log(`[VoiceRecorder] TRANSCRIPT ${isFinal ? 'FINAL' : 'partial'}`, performance.now().toFixed(1), `"${text.slice(-50)}"`);
+        setTranscript(text);
+        onTranscript?.(text);
+      };
+
+      stt.onError = (error) => {
+        console.error('[VoiceRecorder] AssemblyAI error:', error);
+        if (!cancelled) {
+          setConnectionError(error.message || 'Connection error');
+        }
+      };
+
+      stt.onFallbackNeeded = () => {
+        console.warn('[VoiceRecorder] AssemblyAI unavailable — falling back.');
+        if (!cancelled) {
+          cleanupVAD();
+          fallbackToWebSpeech();
+        }
+      };
+
+      stt.onConnectionStateChange = (state) => {
+        if (cancelled) return;
+        if (state === 'connected') {
+          setConnectionState('connected');
+          setConnectionError(null);
+        } else if (state === 'reconnecting') {
+          setConnectionState('reconnecting');
+        } else if (state === 'disconnected') {
+          setConnectionState('error');
+        }
+      };
+
+      stt.onSessionStart = () => {
+        if (!cancelled) {
+          setConnectionState('connected');
+          setConnectionError(null);
+        }
+      };
+
+      assemblyaiRef.current = stt;
+
+      // Initialize persistent connection
+      const connected = await stt.init(stream);
+
+      if (cancelled) {
+        // This invocation was cancelled (StrictMode unmount) — clean up
+        stt.destroyFull();
+        stream.getTracks().forEach(t => t.stop());
+        assemblyaiRef.current = null;
+        mediaStreamRef.current = null;
+        return;
+      }
+
+      if (!connected) {
+        fallbackToWebSpeech();
+        return;
+      }
+
+      // Step 4: Initialize VAD with same stream
+      const vad = new VADService();
+
+      vad.onSpeechStart = () => {
+        if (cancelled) return;
+        console.log('[VoiceRecorder] VAD → Speech started → streaming audio.', performance.now().toFixed(1));
+        setVadState('speaking');
+        onSpeechActivity?.(true);
+
+        // Start forwarding audio to AssemblyAI
+        assemblyaiRef.current?.startStreaming();
+      };
+
+      vad.onSpeechEnd = () => {
+        if (cancelled) return;
+        console.log('[VoiceRecorder] VAD → Speech ended → pausing stream.');
+        setVadState('listening');
+        onSpeechActivity?.(false);
+
+        // Stop forwarding audio (WebSocket stays open)
+        assemblyaiRef.current?.stopStreaming();
+      };
+
+      vadRef.current = vad;
+
+      const vadInitialized = await vad.init(stream);
+
+      if (!vadInitialized) {
+        console.warn('[VoiceRecorder] VAD initialization failed — continuing with manual mode.');
+      }
+
+      if (cancelled) {
+        vad.destroy();
+        stt.destroyFull();
+        stream.getTracks().forEach(t => t.stop());
+        vadRef.current = null;
+        assemblyaiRef.current = null;
+        mediaStreamRef.current = null;
+        return;
+      }
+
+      // If TTS is currently speaking, start VAD in paused state.
+      // It will be resumed when isTTSSpeaking prop becomes false.
+      if (ttsService.isSpeaking) {
+        console.log('[VoiceRecorder] TTS is speaking — starting VAD paused.');
+        await vad.pause();
+        setVadState('idle');
+      } else {
+        setVadState('listening');
+      }
+    };
+
+    const fallbackToWebSpeech = () => {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        setSttProvider('webspeech');
+        setConnectionState('connected');
+        console.log('[VoiceRecorder] Using Web Speech API (fallback).');
+      } else {
+        setSttProvider('text');
+        setUseTextInput(true);
+        setConnectionState('connected');
+        console.log('[VoiceRecorder] Using text input (no voice support).');
+      }
+    };
+
+    const cleanupVAD = () => {
+      if (vadRef.current) {
+        vadRef.current.destroy();
+        vadRef.current = null;
+      }
+    };
+
+    initPipeline();
+
+    // Cleanup on unmount
+    return () => {
+      cancelled = true;
+
+      if (vadRef.current) {
+        vadRef.current.destroy();
+        vadRef.current = null;
+      }
+
+      if (assemblyaiRef.current) {
+        assemblyaiRef.current.destroyFull();
+        assemblyaiRef.current = null;
+      }
+
+      // Stop mic tracks if we own them
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(t => t.stop());
+        mediaStreamRef.current = null;
+      }
+
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Intentionally no deps — init once on mount, destroy on unmount
 
   // ──────────────────────────────────────────────
-  // Web Speech API Fallback
+  // TTS ↔ VAD coordination (prop-driven, no callback chain)
+  // ──────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!vadRef.current) return;
+
+    if (isTTSSpeaking) {
+      // TTS is speaking — pause VAD to prevent false triggers from TTS audio
+      vadRef.current.pause();
+      assemblyaiRef.current?.stopStreaming();
+      setVadState('idle');
+      console.log('[VoiceRecorder] TTS speaking — VAD paused.');
+    } else {
+      // TTS finished — resume VAD to listen for user speech
+      vadRef.current.resume();
+      setVadState('listening');
+      console.log('[VoiceRecorder] TTS ended — VAD resumed.');
+    }
+  }, [isTTSSpeaking]);
+
+  // ──────────────────────────────────────────────
+  // Handle text input mode toggle
+  // ──────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!vadRef.current) return;
+
+    if (useTextInput || disabled) {
+      vadRef.current.pause();
+      assemblyaiRef.current?.stopStreaming();
+      setVadState('idle');
+    } else {
+      vadRef.current.resume();
+      setVadState('listening');
+    }
+  }, [useTextInput, disabled]);
+
+  // ──────────────────────────────────────────────
+  // Web Speech API Fallback (unchanged)
   // ──────────────────────────────────────────────
 
   const initWebSpeechRecognition = useCallback(() => {
@@ -159,145 +334,14 @@ const VoiceRecorder = forwardRef(({ onTranscript, disabled = false, onRecordingS
       if (sessionFinalTranscript) {
         accumulatedTextRef.current = (previousText + sessionFinalTranscript).trim() + ' ';
       }
-      setIsRecording(false);
     };
 
     recognition.onend = () => {
       accumulatedTextRef.current = (previousText + sessionFinalTranscript).trim() + ' ';
-      setIsRecording(false);
-      onRecordingStop?.();
     };
 
     return recognition;
-  }, [onTranscript, onRecordingStop]);
-
-  const startWebSpeech = useCallback(() => {
-    if (disabled || useTextInput) return;
-
-    // Stop TTS when user starts recording (barge-in)
-    ttsService.stop();
-    onRecordingStart?.();
-
-    const recognition = initWebSpeechRecognition();
-    if (!recognition) return;
-
-    recognitionRef.current = recognition;
-    recognition.start();
-    setIsRecording(true);
-  }, [disabled, useTextInput, initWebSpeechRecognition, onRecordingStart]);
-
-  const stopWebSpeech = useCallback(() => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-    }
-    setIsRecording(false);
-  }, []);
-
-  // ──────────────────────────────────────────────
-  // Unified Start/Stop
-  // ──────────────────────────────────────────────
-
-  const startRecording = useCallback(() => {
-    if (disabled || useTextInput) return;
-
-    if (sttProvider === 'assemblyai') {
-      startAssemblyAI();
-    } else if (sttProvider === 'webspeech') {
-      startWebSpeech();
-    }
-  }, [disabled, useTextInput, sttProvider, startAssemblyAI, startWebSpeech]);
-
-  const stopRecording = useCallback(() => {
-    if (sttProvider === 'assemblyai') {
-      stopAssemblyAI();
-    } else if (sttProvider === 'webspeech') {
-      stopWebSpeech();
-    }
-  }, [sttProvider, stopAssemblyAI, stopWebSpeech]);
-
-  // ──────────────────────────────────────────────
-  // Initialization — Determine best STT provider
-  // ──────────────────────────────────────────────
-
-  useEffect(() => {
-    // Try AssemblyAI first by checking if token endpoint is available
-    const checkAssemblyAI = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const response = await fetch('/api/assemblyai/token', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (response.ok) {
-          setSttProvider('assemblyai');
-          console.log('[VoiceRecorder] Using AssemblyAI STT.');
-          return;
-        }
-      } catch (err) {
-        console.warn('[VoiceRecorder] AssemblyAI token check failed:', err.message);
-      }
-
-      // Fallback: check Web Speech API
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        setSttProvider('webspeech');
-        console.log('[VoiceRecorder] Using Web Speech API (fallback).');
-      } else {
-        setSttProvider('text');
-        setUseTextInput(true);
-        console.log('[VoiceRecorder] Using text input (no voice support).');
-      }
-    };
-
-    checkAssemblyAI();
-  }, []);
-
-  // ──────────────────────────────────────────────
-  // Spacebar hold-to-record
-  // ──────────────────────────────────────────────
-
-  useEffect(() => {
-    if (useTextInput || disabled) return;
-
-    const handleKeyDown = (e) => {
-      if (e.code === 'Space' && !e.repeat && !isRecordingRef.current &&
-          document.activeElement?.tagName !== 'INPUT' &&
-          document.activeElement?.tagName !== 'TEXTAREA') {
-        e.preventDefault();
-        startRecording();
-      }
-    };
-
-    const handleKeyUp = (e) => {
-      if (e.code === 'Space' && isRecordingRef.current) {
-        e.preventDefault();
-        stopRecording();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, [startRecording, stopRecording, useTextInput, disabled]);
-
-  // ──────────────────────────────────────────────
-  // Cleanup on unmount
-  // ──────────────────────────────────────────────
-
-  useEffect(() => {
-    return () => {
-      if (assemblyaiRef.current) {
-        assemblyaiRef.current.destroy();
-      }
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-    };
-  }, []);
+  }, [onTranscript]);
 
   // ──────────────────────────────────────────────
   // Expose clearTranscript to parent via ref
@@ -308,12 +352,11 @@ const VoiceRecorder = forwardRef(({ onTranscript, disabled = false, onRecordingS
       setTranscript('');
       accumulatedTextRef.current = '';
       onTranscript?.('');
-      if (isRecording) stopRecording();
       if (assemblyaiRef.current) {
         assemblyaiRef.current.clearTranscript();
       }
     },
-  }), [onTranscript, isRecording, stopRecording]);
+  }), [onTranscript]);
 
   // ──────────────────────────────────────────────
   // Text input handlers
@@ -325,7 +368,6 @@ const VoiceRecorder = forwardRef(({ onTranscript, disabled = false, onRecordingS
   };
 
   const toggleInputMode = () => {
-    if (isRecording) stopRecording();
     setUseTextInput(!useTextInput);
   };
 
@@ -357,31 +399,82 @@ const VoiceRecorder = forwardRef(({ onTranscript, disabled = false, onRecordingS
   };
 
   // ──────────────────────────────────────────────
+  // VAD Status Indicator
+  // ──────────────────────────────────────────────
+
+  const getVADIndicator = () => {
+    if (useTextInput || sttProvider !== 'assemblyai') return null;
+
+    if (connectionState === 'connecting') {
+      return (
+        <div className="flex items-center gap-2">
+          <Loader2 className="w-3.5 h-3.5 text-[#000666] animate-spin" />
+          <span className="text-sm text-[#767683] font-medium">Initializing...</span>
+        </div>
+      );
+    }
+
+    if (connectionState === 'reconnecting') {
+      return (
+        <div className="flex items-center gap-2">
+          <Loader2 className="w-3.5 h-3.5 text-amber-500 animate-spin" />
+          <span className="text-sm text-amber-600 font-medium">Reconnecting...</span>
+        </div>
+      );
+    }
+
+    if (connectionState === 'error') {
+      return (
+        <div className="flex items-center gap-2">
+          <WifiOff className="w-3.5 h-3.5 text-red-500" />
+          <span className="text-sm text-red-600 font-medium">Disconnected</span>
+        </div>
+      );
+    }
+
+    switch (vadState) {
+      case 'speaking':
+        return (
+          <div className="flex items-center gap-2">
+            <div className="relative flex items-center justify-center">
+              <div className="w-3 h-3 bg-red-500 rounded-full" />
+              <div className="absolute w-3 h-3 bg-red-500 rounded-full animate-ping opacity-75" />
+            </div>
+            <span className="text-sm text-red-600 font-medium">Listening to you...</span>
+            <AudioLines className="w-4 h-4 text-red-500 animate-pulse" />
+          </div>
+        );
+      case 'listening':
+        return (
+          <div className="flex items-center gap-2">
+            <div className="relative flex items-center justify-center">
+              <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full" />
+              <div className="absolute w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse opacity-60" />
+            </div>
+            <span className="text-sm text-[#767683] font-medium">Ready — just speak</span>
+            <Radio className="w-3.5 h-3.5 text-emerald-500 opacity-60" />
+          </div>
+        );
+      default:
+        return (
+          <div className="flex items-center gap-2">
+            <div className="w-2.5 h-2.5 bg-gray-300 rounded-full" />
+            <span className="text-sm text-[#767683]">Microphone paused</span>
+          </div>
+        );
+    }
+  };
+
+  // ──────────────────────────────────────────────
   // Render
   // ──────────────────────────────────────────────
 
   return (
     <div className="space-y-4">
-      {/* Mode Toggle + Provider Badge */}
+      {/* Status Bar + Controls */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {isConnecting && (
-            <div className="flex items-center gap-2">
-              <Loader2 className="w-3 h-3 text-[#000666] animate-spin" />
-              <span className="text-sm text-[#767683] font-medium">Connecting...</span>
-            </div>
-          )}
-          {isRecording && !isConnecting && (
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-red-500 rounded-full recording-pulse" />
-              <span className="text-sm text-red-600 font-medium">Recording...</span>
-            </div>
-          )}
-          {!isRecording && !isConnecting && !useTextInput && (
-            <span className="text-xs text-[#767683]">
-              Hold <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-[#000666] font-mono text-[10px] border border-gray-200">SPACE</kbd> to record
-            </span>
-          )}
+          {getVADIndicator()}
           {getProviderBadge()}
         </div>
         <button
@@ -401,36 +494,32 @@ const VoiceRecorder = forwardRef(({ onTranscript, disabled = false, onRecordingS
         </div>
       )}
 
-      {/* Voice Controls */}
-      {!useTextInput && (
-        <div className="flex items-center gap-3">
-          <button
-            onClick={isRecording ? stopRecording : startRecording}
-            disabled={disabled || isConnecting}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium text-sm transition-all duration-300 ${
-              isRecording
-                ? 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100'
-                : 'bg-[#eef2ff] text-[#000666] border border-[#e0e0ff] hover:bg-[#e0e0ff]'
-            } ${disabled || isConnecting ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            {isRecording ? (
-              <>
-                <Square className="w-4 h-4" />
-                Stop Recording
-              </>
+      {/* VAD Visualization (for voice mode) */}
+      {!useTextInput && sttProvider === 'assemblyai' && connectionState === 'connected' && (
+        <div className={`flex items-center justify-center py-4 rounded-xl border transition-all duration-500 ${vadState === 'speaking'
+          ? 'bg-red-50/50 border-red-200 shadow-sm shadow-red-100'
+          : 'bg-[#f7f9fb] border-gray-100'
+          }`}>
+          {/* Animated mic icon */}
+          <div className={`flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 ${vadState === 'speaking'
+            ? 'bg-red-100 ring-4 ring-red-200/50 scale-110'
+            : 'bg-[#eef2ff] ring-2 ring-[#e0e0ff]/50'
+            }`}>
+            {vadState === 'speaking' ? (
+              <Mic className="w-6 h-6 text-red-600 animate-pulse" />
             ) : (
-              <>
-                <Mic className="w-4 h-4" />
-                Start Recording
-              </>
+              <Mic className="w-6 h-6 text-[#000666] opacity-60" />
             )}
-          </button>
+          </div>
+        </div>
+      )}
 
-          {sttProvider === 'text' && (
-            <p className="text-xs text-amber-600">
-              Voice not supported in this browser. Use text input instead.
-            </p>
-          )}
+      {/* Web Speech fallback — manual start/stop buttons */}
+      {!useTextInput && sttProvider === 'webspeech' && (
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-[#767683]">
+            Browser speech recognition active — speak into your microphone.
+          </span>
         </div>
       )}
 

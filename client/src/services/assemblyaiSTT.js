@@ -1,17 +1,20 @@
 /**
- * AssemblyAI Streaming v3 — Real-time Speech-to-Text Service
- * 
- * Connects to AssemblyAI's streaming WebSocket endpoint via temporary tokens.
- * Captures microphone audio, converts to 16kHz PCM16LE, and sends in 50ms chunks.
- * Receives Turn events with partial and final transcripts.
- * 
- * Falls back gracefully when AssemblyAI is unavailable.
+ * AssemblyAI Streaming v3 — Persistent Real-time Speech-to-Text Service
+ *
+ * Architecture: ONE connection per interview session.
+ * - init()           → fetch token, open WebSocket, acquire microphone (called once on mount)
+ * - startStreaming()  → begin forwarding PCM audio to WebSocket (called by VAD onSpeechStart)
+ * - stopStreaming()   → stop forwarding audio but keep WS open (called by VAD onSpeechEnd)
+ * - destroy()         → graceful shutdown: Terminate WS, release mic (called on unmount)
+ *
+ * Audio is always captured by the AudioWorklet; the `_sendingAudio` flag gates
+ * whether chunks are forwarded to the WebSocket.
  */
 
 const ASSEMBLYAI_WS_URL = 'wss://streaming.assemblyai.com/v3/ws';
 const SAMPLE_RATE = 16000;
-const MAX_RETRIES = 3;
-const RETRY_BASE_DELAY_MS = 1000;
+const MAX_RECONNECT_ATTEMPTS = 3;
+const RECONNECT_BASE_DELAY_MS = 1000;
 
 export class AssemblyAISTT {
   constructor() {
@@ -19,10 +22,15 @@ export class AssemblyAISTT {
     this._audioContext = null;
     this._mediaStream = null;
     this._workletNode = null;
-    this._connected = false;
-    this._connecting = false;
-    this._retryCount = 0;
+    this._scriptProcessor = null;
+    this._ownsStream = false; // true if we acquired the mic, false if shared
+
+    // Connection state
+    this._initialized = false;
+    this._initializing = false;
+    this._sendingAudio = false;
     this._terminated = false;
+    this._reconnectAttempts = 0;
 
     // Accumulated transcript state
     this._finalTranscript = '';
@@ -34,25 +42,195 @@ export class AssemblyAISTT {
     this.onSessionEnd = null;      // () => void
     this.onError = null;           // (error) => void
     this.onFallbackNeeded = null;  // () => void — signal to use Web Speech API
+    this.onConnectionStateChange = null; // (state: 'connecting'|'connected'|'reconnecting'|'disconnected') => void
   }
 
-  /**
-   * Whether the service is currently connected and streaming.
-   */
+  // ─── Public Getters ────────────────────────────────────────
+
+  /** Whether the service is initialized and the WebSocket is open. */
   get isConnected() {
-    return this._connected;
+    return this._initialized && this._ws?.readyState === WebSocket.OPEN;
+  }
+
+  /** Whether initialization is in progress. */
+  get isInitializing() {
+    return this._initializing;
+  }
+
+  /** Whether audio is currently being streamed to AssemblyAI. */
+  get isStreaming() {
+    return this._sendingAudio;
+  }
+
+  // ─── Lifecycle: Init (called once on mount) ────────────────
+
+  /**
+   * Initialize the persistent connection.
+   * Acquires microphone, loads AudioWorklet, fetches token, opens WebSocket.
+   * @param {MediaStream} [sharedStream] - Optional pre-acquired MediaStream to share with VAD
+   * @returns {Promise<boolean>} true if connected, false if fallback needed
+   */
+  async init(sharedStream = null) {
+    if (this._initialized || this._initializing) {
+      console.warn('[AssemblyAI STT] Already initialized or initializing.');
+      return this._initialized;
+    }
+
+    this._initializing = true;
+    this._terminated = false;
+    this.onConnectionStateChange?.('connecting');
+
+    try {
+      // Step 1: Acquire microphone (or use shared stream)
+      if (sharedStream) {
+        this._mediaStream = sharedStream;
+        this._ownsStream = false;
+        console.log('[AssemblyAI STT] Using shared MediaStream.');
+      } else {
+        this._mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: false, // AssemblyAI handles noise server-side
+            sampleRate: SAMPLE_RATE,
+            channelCount: 1,
+          },
+        });
+        this._ownsStream = true;
+        console.log('[AssemblyAI STT] Microphone acquired.');
+      }
+
+      // Step 2: Set up AudioContext and Worklet (persistent)
+      await this._setupAudioPipeline();
+
+      // Step 3: Fetch token + open WebSocket
+      await this._connectWebSocket();
+
+      this._initialized = true;
+      this._initializing = false;
+      this._reconnectAttempts = 0;
+      this.onConnectionStateChange?.('connected');
+
+      console.log('[AssemblyAI STT] Initialized — persistent connection established.');
+      return true;
+    } catch (err) {
+      console.error('[AssemblyAI STT] Initialization failed:', err.message);
+      this._initializing = false;
+      this.onConnectionStateChange?.('disconnected');
+      this.onFallbackNeeded?.();
+      return false;
+    }
+  }
+
+  // ─── Audio Gating (called by VAD) ─────────────────────────
+
+  /**
+   * Start forwarding audio chunks to AssemblyAI.
+   * Called when VAD detects speech start.
+   */
+  startStreaming() {
+    if (!this._initialized) {
+      console.warn('[AssemblyAI STT] Cannot start streaming — not initialized.');
+      return;
+    }
+    this._sendingAudio = true;
+    console.log('[AssemblyAI STT] START STREAMING', performance.now().toFixed(1));
   }
 
   /**
-   * Whether a connection attempt is in progress.
+   * Stop forwarding audio chunks to AssemblyAI.
+   * WebSocket stays open, microphone stays on.
+   * Called when VAD detects speech end.
    */
-  get isConnecting() {
-    return this._connecting;
+  stopStreaming() {
+    this._sendingAudio = false;
+    console.log('[AssemblyAI STT] Audio streaming paused (connection kept alive).');
+  }
+
+  // ─── Transcript Management ────────────────────────────────
+
+  /** Get the current accumulated transcript. */
+  getTranscript() {
+    if (this._partialTranscript) {
+      return this._finalTranscript
+        ? this._finalTranscript + ' ' + this._partialTranscript
+        : this._partialTranscript;
+    }
+    return this._finalTranscript;
+  }
+
+  /** Clear the accumulated transcript (e.g., when moving to next question). */
+  clearTranscript() {
+    this._finalTranscript = '';
+    this._partialTranscript = '';
   }
 
   /**
-   * Fetch a temporary token from our backend.
+   * Prepend previously accumulated text (for question transitions).
    */
+  prependTranscript(text) {
+    if (text) {
+      this._finalTranscript = text.trim();
+    }
+  }
+
+  // ─── Lifecycle: Destroy (called once on unmount) ──────────
+
+  /**
+   * Gracefully shut down everything.
+   * Sends Terminate to AssemblyAI, closes WebSocket, releases microphone.
+   */
+  async destroy() {
+    this._terminated = true;
+    this._sendingAudio = false;
+
+    // Send terminate message to AssemblyAI
+    if (this._ws?.readyState === WebSocket.OPEN) {
+      try {
+        this._ws.send(JSON.stringify({ type: 'Terminate' }));
+        // Wait briefly for termination ack
+        await new Promise(r => setTimeout(r, 500));
+      } catch (err) {
+        console.warn('[AssemblyAI STT] Error sending terminate:', err.message);
+      }
+    }
+
+    // Close WebSocket
+    if (this._ws) {
+      this._ws.close();
+      this._ws = null;
+    }
+
+    // Release audio resources
+    this._teardownAudioPipeline();
+
+    this._initialized = false;
+    this._initializing = false;
+    this.onConnectionStateChange?.('disconnected');
+
+    console.log('[AssemblyAI STT] Destroyed — all resources released.');
+  }
+
+  /**
+   * Clean up all resources and nullify callbacks.
+   */
+  destroyFull() {
+    this.destroy();
+    this.onTranscript = null;
+    this.onSessionStart = null;
+    this.onSessionEnd = null;
+    this.onError = null;
+    this.onFallbackNeeded = null;
+    this.onConnectionStateChange = null;
+  }
+
+  // ─── Internal: WebSocket ──────────────────────────────────
+
+  async _connectWebSocket() {
+    const tempToken = await this._fetchToken();
+    const wsUrl = `${ASSEMBLYAI_WS_URL}?token=${encodeURIComponent(tempToken)}&speech_model=u3-rt-pro&sample_rate=${SAMPLE_RATE}&format_turns=true&interruption_delay=200`;
+    await this._openWebSocket(wsUrl);
+  }
+
   async _fetchToken() {
     try {
       const token = localStorage.getItem('token');
@@ -75,60 +253,6 @@ export class AssemblyAISTT {
     }
   }
 
-  /**
-   * Connect to AssemblyAI Streaming v3 and start capturing microphone audio.
-   * @returns {Promise<boolean>} true if connected, false if fallback needed
-   */
-  async connect() {
-    if (this._connected || this._connecting) {
-      console.warn('[AssemblyAI STT] Already connected or connecting.');
-      return true;
-    }
-
-    this._connecting = true;
-    this._terminated = false;
-
-    try {
-      // Step 1: Get temporary token
-      const tempToken = await this._fetchToken();
-
-      // Step 2: Open WebSocket
-      const wsUrl = `${ASSEMBLYAI_WS_URL}?token=${encodeURIComponent(tempToken)}&speech_model=u3-rt-pro&sample_rate=${SAMPLE_RATE}&format_turns=true`;
-
-      await this._openWebSocket(wsUrl);
-
-      // Step 3: Start microphone capture
-      await this._startMicrophone();
-
-      this._connected = true;
-      this._connecting = false;
-      this._retryCount = 0;
-
-      console.log('[AssemblyAI STT] Connected and streaming.');
-      return true;
-    } catch (err) {
-      console.error('[AssemblyAI STT] Connection failed:', err.message);
-      this._connecting = false;
-
-      // Retry with exponential backoff
-      if (this._retryCount < MAX_RETRIES && !this._terminated) {
-        this._retryCount++;
-        const delay = RETRY_BASE_DELAY_MS * Math.pow(2, this._retryCount - 1);
-        console.log(`[AssemblyAI STT] Retrying in ${delay}ms (attempt ${this._retryCount}/${MAX_RETRIES})...`);
-        await new Promise(r => setTimeout(r, delay));
-        return this.connect();
-      }
-
-      // All retries exhausted — signal fallback
-      console.warn('[AssemblyAI STT] All retries exhausted. Signaling fallback.');
-      this.onFallbackNeeded?.();
-      return false;
-    }
-  }
-
-  /**
-   * Open WebSocket connection to AssemblyAI.
-   */
   _openWebSocket(url) {
     return new Promise((resolve, reject) => {
       try {
@@ -167,12 +291,13 @@ export class AssemblyAISTT {
 
         this._ws.onclose = (event) => {
           console.log(`[AssemblyAI STT] WebSocket closed: code=${event.code} reason=${event.reason}`);
-          clearTimeout(timeout);
-          this._connected = false;
 
-          // Handle unexpected closure
-          if (!this._terminated && this._connected) {
+          // Handle unexpected closure — attempt reconnect
+          if (!this._terminated && this._initialized) {
+            this._initialized = false;
+            this._sendingAudio = false;
             this.onError?.(new Error(`Connection lost (code: ${event.code})`));
+            this._attemptReconnect();
           }
         };
       } catch (err) {
@@ -181,9 +306,36 @@ export class AssemblyAISTT {
     });
   }
 
-  /**
-   * Handle incoming WebSocket messages from AssemblyAI.
-   */
+  async _attemptReconnect() {
+    if (this._terminated || this._reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      console.warn('[AssemblyAI STT] Reconnect attempts exhausted. Signaling fallback.');
+      this.onFallbackNeeded?.();
+      return;
+    }
+
+    this._reconnectAttempts++;
+    const delay = RECONNECT_BASE_DELAY_MS * Math.pow(2, this._reconnectAttempts - 1);
+    console.log(`[AssemblyAI STT] Reconnecting in ${delay}ms (attempt ${this._reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+    this.onConnectionStateChange?.('reconnecting');
+
+    await new Promise(r => setTimeout(r, delay));
+
+    if (this._terminated) return;
+
+    try {
+      await this._connectWebSocket();
+      this._initialized = true;
+      this._reconnectAttempts = 0;
+      this.onConnectionStateChange?.('connected');
+      console.log('[AssemblyAI STT] Reconnected successfully.');
+    } catch (err) {
+      console.error('[AssemblyAI STT] Reconnect failed:', err.message);
+      this._attemptReconnect();
+    }
+  }
+
+  // ─── Internal: Message Handling ───────────────────────────
+
   _handleMessage(msg) {
     switch (msg.type) {
       case 'Begin':
@@ -201,7 +353,7 @@ export class AssemblyAISTT {
         break;
 
       case 'SpeechStarted':
-        // VAD detected speech — could be used for UI feedback
+        // AssemblyAI's own VAD detected speech — informational only
         break;
 
       default:
@@ -209,12 +361,11 @@ export class AssemblyAISTT {
     }
   }
 
-  /**
-   * Handle Turn messages — contains transcript text.
-   */
   _handleTurn(msg) {
     const transcript = msg.transcript || '';
     const isEndOfTurn = msg.end_of_turn === true;
+
+    console.log(`[AssemblyAI STT] TURN ${isEndOfTurn ? 'FINAL' : 'partial'}`, performance.now().toFixed(1), `"${transcript.slice(0, 60)}"`);
 
     if (!transcript.trim()) return;
 
@@ -233,20 +384,9 @@ export class AssemblyAISTT {
     }
   }
 
-  /**
-   * Start capturing microphone audio and sending to AssemblyAI.
-   */
-  async _startMicrophone() {
-    // Request microphone access with echo cancellation
-    this._mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: false,  // AssemblyAI handles noise server-side
-        sampleRate: SAMPLE_RATE,
-        channelCount: 1,
-      },
-    });
+  // ─── Internal: Audio Pipeline ─────────────────────────────
 
+  async _setupAudioPipeline() {
     // Create AudioContext at 16kHz
     this._audioContext = new (window.AudioContext || window.webkitAudioContext)({
       sampleRate: SAMPLE_RATE,
@@ -260,30 +400,27 @@ export class AssemblyAISTT {
       this._workletNode = new AudioWorkletNode(this._audioContext, 'pcm-processor');
 
       this._workletNode.port.onmessage = (event) => {
-        if (this._ws?.readyState === WebSocket.OPEN) {
+        // Gate: only forward audio when _sendingAudio is true and WS is open
+        if (this._sendingAudio && this._ws?.readyState === WebSocket.OPEN) {
           this._ws.send(event.data);
         }
       };
 
       source.connect(this._workletNode);
       this._workletNode.connect(this._audioContext.destination);
-      console.log('[AssemblyAI STT] Using AudioWorklet for audio capture.');
+      console.log('[AssemblyAI STT] AudioWorklet pipeline established.');
     } catch (err) {
       console.warn('[AssemblyAI STT] AudioWorklet not available, using ScriptProcessor:', err.message);
       this._useScriptProcessor(source);
     }
   }
 
-  /**
-   * Fallback: Use deprecated ScriptProcessorNode for browsers
-   * that don't support AudioWorklet.
-   */
   _useScriptProcessor(source) {
-    // Buffer size of 4096 at 16kHz ≈ 256ms chunks
-    const processor = this._audioContext.createScriptProcessor(4096, 1, 1);
+    const processor = this._audioContext.createScriptProcessor(2048, 1, 1);
 
     processor.onaudioprocess = (event) => {
-      if (this._ws?.readyState !== WebSocket.OPEN) return;
+      // Gate: only forward audio when _sendingAudio is true and WS is open
+      if (!this._sendingAudio || this._ws?.readyState !== WebSocket.OPEN) return;
 
       const float32Data = event.inputBuffer.getChannelData(0);
       const int16Data = new Int16Array(float32Data.length);
@@ -301,61 +438,7 @@ export class AssemblyAISTT {
     this._scriptProcessor = processor;
   }
 
-  /**
-   * Get the current accumulated transcript.
-   */
-  getTranscript() {
-    if (this._partialTranscript) {
-      return this._finalTranscript
-        ? this._finalTranscript + ' ' + this._partialTranscript
-        : this._partialTranscript;
-    }
-    return this._finalTranscript;
-  }
-
-  /**
-   * Clear the accumulated transcript (e.g., when moving to next question).
-   */
-  clearTranscript() {
-    this._finalTranscript = '';
-    this._partialTranscript = '';
-  }
-
-  /**
-   * Gracefully stop streaming and disconnect.
-   */
-  async disconnect() {
-    this._terminated = true;
-
-    // Send terminate message to AssemblyAI
-    if (this._ws?.readyState === WebSocket.OPEN) {
-      try {
-        this._ws.send(JSON.stringify({ type: 'Terminate' }));
-        // Wait briefly for termination ack
-        await new Promise(r => setTimeout(r, 500));
-      } catch (err) {
-        console.warn('[AssemblyAI STT] Error sending terminate:', err.message);
-      }
-    }
-
-    // Close WebSocket
-    if (this._ws) {
-      this._ws.close();
-      this._ws = null;
-    }
-
-    // Stop microphone
-    this._stopMicrophone();
-
-    this._connected = false;
-    this._connecting = false;
-    console.log('[AssemblyAI STT] Disconnected.');
-  }
-
-  /**
-   * Stop microphone capture and release audio resources.
-   */
-  _stopMicrophone() {
+  _teardownAudioPipeline() {
     if (this._workletNode) {
       this._workletNode.disconnect();
       this._workletNode = null;
@@ -371,22 +454,20 @@ export class AssemblyAISTT {
       this._audioContext = null;
     }
 
+    // Only stop tracks if we own the stream (not shared)
     if (this._mediaStream) {
-      this._mediaStream.getTracks().forEach(track => track.stop());
+      if (this._ownsStream) {
+        this._mediaStream.getTracks().forEach(track => track.stop());
+      }
       this._mediaStream = null;
     }
   }
 
   /**
-   * Clean up all resources.
+   * Returns the current MediaStream (for sharing with VAD).
    */
-  destroy() {
-    this.disconnect();
-    this.onTranscript = null;
-    this.onSessionStart = null;
-    this.onSessionEnd = null;
-    this.onError = null;
-    this.onFallbackNeeded = null;
+  getMediaStream() {
+    return this._mediaStream;
   }
 }
 

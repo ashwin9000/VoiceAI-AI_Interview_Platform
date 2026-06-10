@@ -14,5 +14,13 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+    headers: {
+      // Required by ONNX Runtime Web for SharedArrayBuffer (multi-threaded WASM)
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+    },
+  },
+  optimizeDeps: {
+
   },
 })

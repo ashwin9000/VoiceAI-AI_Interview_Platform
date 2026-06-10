@@ -213,7 +213,12 @@ class TTSService {
     }
 
     window.speechSynthesis.cancel();
+    const wasSpeaking = this._speaking;
     this._speaking = false;
+    // Notify listeners so VAD clears _ttsPlayingSince on barge-in
+    if (wasSpeaking) {
+      this.onEnd?.();
+    }
   }
 
   /**

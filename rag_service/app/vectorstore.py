@@ -358,6 +358,9 @@ def get_retriever(user_id: str):
     )
 
     return vectorstore.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": 8},
+        search_type="mmr",
+        search_kwargs={
+            "k": 8,
+            "fetch_k": 30
+        }
     )

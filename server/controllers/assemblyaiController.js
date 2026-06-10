@@ -28,7 +28,8 @@ const getStreamingToken = async (req, res, next) => {
       'https://streaming.assemblyai.com/v3/token',
       {
         params: {
-          expires_in_seconds: 300, // 5 minutes
+          expires_in_seconds: 600, // 10 minutes (max allowed) — token fetched once per session
+          max_session_duration_seconds: 10800, // 3 hours — full interview session support
         },
         headers: {
           Authorization: apiKey, // AssemblyAI uses raw key, NOT Bearer

@@ -11,7 +11,7 @@ import {
   BrainCircuit, AlertTriangle,
   X, CheckCircle2, Mic, ArrowRight, Clock,
   User, Check, Send, Loader2, MessageCircle, Eraser,
-  Volume2, VolumeX
+  Volume2, VolumeX, StopCircle
 } from 'lucide-react';
 
 /**
@@ -175,13 +175,19 @@ const InterviewPage = () => {
     setIsTTSEnabled(prev => !prev);
   }, []);
 
-  // Stop TTS when user starts recording (barge-in)
-  const handleRecordingStart = useCallback(() => {
+  // VAD speech activity callback
+  const handleSpeechActivity = useCallback((isSpeaking) => {
+    // Future: could show visual indicators at the page level
+  }, []);
+
+  // Stop TTS for current question only
+  const handleStopSpeaking = useCallback(() => {
     ttsService.stop();
   }, []);
 
-  const handleRecordingStop = useCallback(() => {
-    // No-op for now, but available for future use
+  // Mute TTS for the rest of the interview session
+  const handleMuteAllTTS = useCallback(() => {
+    setIsTTSEnabled(false);
   }, []);
 
   const formatTimer = (seconds) => {
@@ -452,9 +458,30 @@ const InterviewPage = () => {
 
               {/* Speaking indicator with waveform */}
               {isSpeaking ? (
-                <div className="flex items-center gap-2 bg-[#000666]/90 backdrop-blur-sm rounded-full px-4 py-1.5 border border-[#000666]/30">
-                  <AudioWaveform isActive={true} barCount={4} className="h-4" />
-                  <span className="text-xs font-medium text-white">Speaking...</span>
+                <div className="flex flex-col items-center gap-3">
+                  <div className="flex items-center gap-2 bg-[#000666]/90 backdrop-blur-sm rounded-full px-4 py-1.5 border border-[#000666]/30">
+                    <AudioWaveform isActive={true} barCount={4} className="h-4" />
+                    <span className="text-xs font-medium text-white">Speaking...</span>
+                  </div>
+
+                  {/* Stop Speaking Buttons */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleStopSpeaking}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-white/90 backdrop-blur-sm text-[#ba1a1a] border border-red-200 hover:bg-red-50 hover:border-red-300 transition-all shadow-sm"
+                    >
+                      <StopCircle className="w-3.5 h-3.5" />
+                      Stop Speaking
+                    </button>
+                    <button
+                      onClick={handleMuteAllTTS}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-white/90 backdrop-blur-sm text-[#767683] border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+                      title="Disable voice for all remaining questions"
+                    >
+                      <VolumeX className="w-3.5 h-3.5" />
+                      Mute All
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center gap-2 bg-white/70 backdrop-blur-sm rounded-full px-4 py-1.5 border border-white/50">
@@ -555,14 +582,13 @@ const InterviewPage = () => {
                   </div>
                 </div>
 
-                {/* VoiceRecorder */}
+                {/* VoiceRecorder — persistent connection, VAD-driven */}
                 <VoiceRecorder
                   ref={voiceRecorderRef}
-                  key={currentQuestionIndex}
                   onTranscript={handleTranscript}
                   disabled={isSubmittingAnswer}
-                  onRecordingStart={handleRecordingStart}
-                  onRecordingStop={handleRecordingStop}
+                  onSpeechActivity={handleSpeechActivity}
+                  isTTSSpeaking={isSpeaking}
                 />
 
                 {/* Clear Answer Button */}

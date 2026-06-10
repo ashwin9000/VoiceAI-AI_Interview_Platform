@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# VAD / ONNX runtime files (copied from node_modules to public/ at install time)
+public/*.onnx
+public/*.wasm
+public/vad.worklet.bundle.min.js
