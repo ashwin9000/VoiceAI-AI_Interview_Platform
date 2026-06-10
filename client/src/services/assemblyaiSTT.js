@@ -16,6 +16,10 @@ const SAMPLE_RATE = 16000;
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_BASE_DELAY_MS = 1000;
 
+// Pre-roll buffer: keep last N chunks so we can recover audio before VAD fires.
+// At 16kHz with 50ms chunks (800 samples each), 6 chunks = 300ms.
+const PRE_ROLL_CHUNKS = 6;
+
 export class AssemblyAISTT {
   constructor() {
     this._ws = null;
@@ -31,6 +35,10 @@ export class AssemblyAISTT {
     this._sendingAudio = false;
     this._terminated = false;
     this._reconnectAttempts = 0;
+
+    // Pre-roll ring buffer — stores recent audio chunks so the first word
+    // isn't lost when VAD fires after speech has already begun.
+    this._preRollBuffer = [];
 
     // Accumulated transcript state
     this._finalTranscript = '';
@@ -132,6 +140,17 @@ export class AssemblyAISTT {
       console.warn('[AssemblyAI STT] Cannot start streaming — not initialized.');
       return;
     }
+
+    // Flush pre-roll buffer: send buffered audio BEFORE switching to live.
+    // This recovers ~300ms of audio that was captured before VAD triggered.
+    if (this._preRollBuffer.length > 0 && this._ws?.readyState === WebSocket.OPEN) {
+      console.log(`[AssemblyAI STT] Flushing ${this._preRollBuffer.length} pre-roll chunks (${this._preRollBuffer.length * 50}ms).`);
+      for (const chunk of this._preRollBuffer) {
+        this._ws.send(chunk);
+      }
+      this._preRollBuffer = [];
+    }
+
     this._sendingAudio = true;
     console.log('[AssemblyAI STT] START STREAMING', performance.now().toFixed(1));
   }
@@ -227,7 +246,7 @@ export class AssemblyAISTT {
 
   async _connectWebSocket() {
     const tempToken = await this._fetchToken();
-    const wsUrl = `${ASSEMBLYAI_WS_URL}?token=${encodeURIComponent(tempToken)}&speech_model=u3-rt-pro&sample_rate=${SAMPLE_RATE}&format_turns=true&interruption_delay=200`;
+    const wsUrl = `${ASSEMBLYAI_WS_URL}?token=${encodeURIComponent(tempToken)}&speech_model=u3-rt-pro&sample_rate=${SAMPLE_RATE}&format_turns=true&interruption_delay=100`;
     await this._openWebSocket(wsUrl);
   }
 
@@ -400,9 +419,15 @@ export class AssemblyAISTT {
       this._workletNode = new AudioWorkletNode(this._audioContext, 'pcm-processor');
 
       this._workletNode.port.onmessage = (event) => {
-        // Gate: only forward audio when _sendingAudio is true and WS is open
         if (this._sendingAudio && this._ws?.readyState === WebSocket.OPEN) {
+          // Live streaming — send directly
           this._ws.send(event.data);
+        } else {
+          // Not streaming — buffer for pre-roll recovery
+          this._preRollBuffer.push(event.data);
+          if (this._preRollBuffer.length > PRE_ROLL_CHUNKS) {
+            this._preRollBuffer.shift(); // Drop oldest, keep last N
+          }
         }
       };
 
@@ -419,9 +444,6 @@ export class AssemblyAISTT {
     const processor = this._audioContext.createScriptProcessor(2048, 1, 1);
 
     processor.onaudioprocess = (event) => {
-      // Gate: only forward audio when _sendingAudio is true and WS is open
-      if (!this._sendingAudio || this._ws?.readyState !== WebSocket.OPEN) return;
-
       const float32Data = event.inputBuffer.getChannelData(0);
       const int16Data = new Int16Array(float32Data.length);
 
@@ -430,7 +452,15 @@ export class AssemblyAISTT {
         int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
       }
 
-      this._ws.send(int16Data.buffer);
+      if (this._sendingAudio && this._ws?.readyState === WebSocket.OPEN) {
+        this._ws.send(int16Data.buffer);
+      } else {
+        // Pre-roll buffer for ScriptProcessor fallback
+        this._preRollBuffer.push(int16Data.buffer);
+        if (this._preRollBuffer.length > PRE_ROLL_CHUNKS) {
+          this._preRollBuffer.shift();
+        }
+      }
     };
 
     source.connect(processor);

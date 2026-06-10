@@ -563,9 +563,34 @@ const InterviewPage = () => {
               </div>
 
               {/* Question text */}
-              <p className="text-lg sm:text-xl font-bold text-[#191c1e] leading-relaxed mb-6">
+              <p className="text-lg sm:text-xl font-bold text-[#191c1e] leading-relaxed mb-4">
                 &ldquo;{currentQuestion.text}&rdquo;
               </p>
+
+              {/* Inline TTS controls — visible while AI is speaking the question */}
+              {isSpeaking && (
+                <div className="flex items-center gap-2 mb-4 p-3 rounded-xl bg-[#000666]/5 border border-[#000666]/10">
+                  <div className="flex items-center gap-1.5 mr-auto">
+                    <AudioWaveform isActive={true} barCount={3} className="h-3" />
+                    <span className="text-xs font-medium text-[#000666]">Reading aloud...</span>
+                  </div>
+                  <button
+                    onClick={handleStopSpeaking}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-[#ba1a1a] bg-white border border-red-200 hover:bg-red-50 transition-all"
+                  >
+                    <StopCircle className="w-3.5 h-3.5" />
+                    Stop Reading
+                  </button>
+                  <button
+                    onClick={handleMuteAllTTS}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-[#767683] bg-white border border-gray-200 hover:bg-gray-50 transition-all"
+                    title="Disable voice for all remaining questions"
+                  >
+                    <VolumeX className="w-3.5 h-3.5" />
+                    Mute All
+                  </button>
+                </div>
+              )}
 
               {/* Answer input area */}
               <div className="bg-[#f7f9fb] rounded-xl p-5 border border-[#e5e7eb]">
