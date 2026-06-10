@@ -1,4 +1,4 @@
-# 🎙️ AI Mock Interview Platform
+# 🎙️ VoiceAI - AI Interview Platform
 
 > A voice-based, AI-powered mock interview platform that adapts to your resume, evaluates your performance, and helps you improve — with full privacy for your personal data.
 
