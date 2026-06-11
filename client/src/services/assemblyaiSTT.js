@@ -44,6 +44,11 @@ export class AssemblyAISTT {
     this._finalTranscript = '';
     this._partialTranscript = '';
 
+    // Generation counter — incremented on clearTranscript() so that
+    // late-arriving Turn messages from a previous question are discarded.
+    this._transcriptGeneration = 0;
+    this._clearTimestamp = 0;
+
     // Callbacks
     this.onTranscript = null;      // (fullText, isFinal) => void
     this.onSessionStart = null;    // () => void
@@ -181,6 +186,11 @@ export class AssemblyAISTT {
   clearTranscript() {
     this._finalTranscript = '';
     this._partialTranscript = '';
+    this._transcriptGeneration++;
+    this._clearTimestamp = performance.now();
+    // Flush pre-roll buffer so stale audio isn't replayed on next VAD cycle
+    this._preRollBuffer = [];
+    console.log(`[AssemblyAI STT] Transcript cleared (gen=${this._transcriptGeneration}).`);
   }
 
   /**
@@ -387,6 +397,16 @@ export class AssemblyAISTT {
     console.log(`[AssemblyAI STT] TURN ${isEndOfTurn ? 'FINAL' : 'partial'}`, performance.now().toFixed(1), `"${transcript.slice(0, 60)}"`);
 
     if (!transcript.trim()) return;
+
+    // Guard: discard late-arriving Turn messages that belong to the
+    // previous question. After clearTranscript() there's a 300ms grace
+    // window during which any Turn that would produce text from an
+    // empty accumulator is treated as stale and dropped.
+    const msSinceClear = performance.now() - this._clearTimestamp;
+    if (msSinceClear < 300 && !this._finalTranscript && !this._partialTranscript) {
+      console.log(`[AssemblyAI STT] Suppressing stale Turn (${msSinceClear.toFixed(0)}ms after clear, gen=${this._transcriptGeneration}).`);
+      return;
+    }
 
     if (isEndOfTurn) {
       // Final turn — append to accumulated final transcript

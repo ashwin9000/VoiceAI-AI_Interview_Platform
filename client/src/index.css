@@ -681,6 +681,33 @@
   border-radius: 2px;
   transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
+.iv-progress-accent {
+  width: 30%;
+  animation: iv-progress-slide 2s ease-in-out infinite;
+}
+@keyframes iv-progress-slide {
+  0%   { transform: translateX(-100%); }
+  50%  { transform: translateX(233%); }
+  100% { transform: translateX(-100%); }
+}
+/* ── Text Input (typing mode) ── */
+.iv-text-input {
+  width: 100%;
+  min-height: 100px;
+  padding: 16px;
+  border: none;
+  background: transparent;
+  color: #191c1e;
+  font-size: 15px;
+  line-height: 1.6;
+  font-family: 'Inter', sans-serif;
+  resize: vertical;
+  outline: none;
+}
+.iv-text-input::placeholder {
+  color: #9ca3af;
+  font-style: italic;
+}
 
 /* ── AI Avatar Section ── */
 .iv-avatar-section {
@@ -843,6 +870,24 @@
 .iv-pill:disabled:hover {
   background: #ffffff;
   border-color: #e0e3e5;
+}
+.iv-pill-active {
+  background: #000666 !important;
+  color: #ffffff !important;
+  border-color: #000666 !important;
+}
+.iv-pill-active:hover {
+  background: #1a237e !important;
+  border-color: #1a237e !important;
+}
+.iv-pill-danger {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fecaca;
+}
+.iv-pill-danger:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
 }
 
 /* ── Bottom Controls ── */

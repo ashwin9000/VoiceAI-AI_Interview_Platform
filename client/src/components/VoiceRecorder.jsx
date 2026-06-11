@@ -353,10 +353,32 @@ const VoiceRecorder = forwardRef(({ onTranscript, disabled = false, onSpeechActi
       accumulatedTextRef.current = '';
       onTranscript?.('');
       if (assemblyaiRef.current) {
+        // Stop forwarding audio BEFORE clearing so no in-flight chunks
+        // generate Turn messages that re-populate the answer box.
+        assemblyaiRef.current.stopStreaming();
         assemblyaiRef.current.clearTranscript();
       }
+      // Briefly pause then resume VAD to flush its internal speech state,
+      // preventing an immediate onSpeechStart from resuming the old stream.
+      if (vadRef.current) {
+        vadRef.current.pause();
+        setVadState('idle');
+        // Resume after the grace window so the user can keep speaking
+        setTimeout(() => {
+          if (vadRef.current && !useTextInput) {
+            vadRef.current.resume();
+            setVadState('listening');
+          }
+        }, 150);
+      }
     },
-  }), [onTranscript]);
+    toggleInputMode: () => {
+      setUseTextInput((prev) => !prev);
+    },
+    get isTextMode() {
+      return useTextInput;
+    },
+  }), [onTranscript, useTextInput]);
 
   // ──────────────────────────────────────────────
   // Text input handlers

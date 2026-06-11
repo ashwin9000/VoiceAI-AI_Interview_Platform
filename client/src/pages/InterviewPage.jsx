@@ -107,6 +107,9 @@ const InterviewPage = () => {
   const [isTTSEnabled, setIsTTSEnabled] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // Text input mode (synced from VoiceRecorder)
+  const [isTextMode, setIsTextMode] = useState(false);
+
   // History expansion
   const [expandedHistoryIdx, setExpandedHistoryIdx] = useState(null);
   const [showPreviousResponses, setShowPreviousResponses] = useState(false);
@@ -115,9 +118,6 @@ const InterviewPage = () => {
   const historyEndRef = useRef(null);
   const voiceRecorderRef = useRef(null);
   const lastSpokenQuestionRef = useRef(null);
-
-  // Total questions for progress (use from backend or fallback)
-  const totalQuestions = questionState?.totalQuestions || 10;
 
   // Fetch interview on mount
   useEffect(() => {
@@ -234,8 +234,17 @@ const InterviewPage = () => {
     ttsService.stop();
   }, []);
 
-  const handleMuteAllTTS = useCallback(() => {
-    setIsTTSEnabled(false);
+  const handleToggleTTS = useCallback(() => {
+    setIsTTSEnabled((prev) => !prev);
+  }, []);
+
+  const handleToggleTextMode = useCallback(() => {
+    voiceRecorderRef.current?.toggleInputMode();
+    setIsTextMode((prev) => !prev);
+  }, []);
+
+  const handleTextAreaChange = useCallback((e) => {
+    setCurrentAnswer(e.target.value);
   }, []);
 
   const handleRepeatQuestion = useCallback(() => {
@@ -337,7 +346,7 @@ const InterviewPage = () => {
 
   const answeredCount = conversationHistory.length;
   const currentPhaseIdx = getPhaseIndex(questionState?.interviewPhase || 'resume');
-  const progressPercent = totalQuestions > 0 ? ((answeredCount) / totalQuestions) * 100 : 0;
+  // No progress percent — question count is dynamic and unknown
 
   // --- Loading ---
   if (loading) {
@@ -396,9 +405,9 @@ const InterviewPage = () => {
           {/* Left: Back + Brand */}
           <div className="iv-topbar-left">
             <button
-              onClick={() => setShowConfirmModal(true)}
+              onClick={() => navigate('/dashboard')}
               className="iv-back-btn"
-              title="Back"
+              title="Back to Dashboard"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
@@ -457,13 +466,10 @@ const InterviewPage = () => {
               {/* Progress Bar */}
               <div className="iv-progress-section">
                 <span className="iv-progress-label">
-                  Question {answeredCount + 1} of {totalQuestions}
+                  Question {answeredCount + 1}
                 </span>
                 <div className="iv-progress-track">
-                  <div
-                    className="iv-progress-fill"
-                    style={{ width: `${progressPercent}%` }}
-                  />
+                  <div className="iv-progress-fill iv-progress-accent" />
                 </div>
               </div>
 
@@ -497,7 +503,16 @@ const InterviewPage = () => {
 
               {/* Answer Input Area */}
               <div className="iv-answer-area">
-                {currentAnswer.trim() ? (
+                {isTextMode ? (
+                  <textarea
+                    className="iv-text-input"
+                    value={currentAnswer}
+                    onChange={handleTextAreaChange}
+                    placeholder="Type your answer here..."
+                    rows={4}
+                    autoFocus
+                  />
+                ) : currentAnswer.trim() ? (
                   <p className="iv-answer-text">{currentAnswer}</p>
                 ) : (
                   <p className="iv-answer-placeholder">Listening...</p>
@@ -517,11 +532,13 @@ const InterviewPage = () => {
 
               {/* Action Pills Row */}
               <div className="iv-action-pills">
-                <button className="iv-pill" onClick={() => {
-                  // Toggle text input in VoiceRecorder
-                }} title="Switch to text input">
-                  <Keyboard className="w-3.5 h-3.5" />
-                  <span>Type</span>
+                <button
+                  className={`iv-pill ${isTextMode ? 'iv-pill-active' : ''}`}
+                  onClick={handleToggleTextMode}
+                  title={isTextMode ? 'Switch to voice input' : 'Switch to text input'}
+                >
+                  {isTextMode ? <Mic className="w-3.5 h-3.5" /> : <Keyboard className="w-3.5 h-3.5" />}
+                  <span>{isTextMode ? 'Voice' : 'Type'}</span>
                 </button>
                 <button
                   className="iv-pill"
@@ -533,18 +550,18 @@ const InterviewPage = () => {
                   <span>Erase</span>
                 </button>
                 {isSpeaking && (
-                  <button className="iv-pill" onClick={handleStopSpeaking} title="Stop AI speaking">
+                  <button className="iv-pill iv-pill-danger" onClick={handleStopSpeaking} title="Stop AI speaking">
                     <StopCircle className="w-3.5 h-3.5" />
                     <span>Stop</span>
                   </button>
                 )}
                 <button
-                  className="iv-pill"
-                  onClick={handleMuteAllTTS}
-                  title="Mute all AI voice"
+                  className={`iv-pill ${!isTTSEnabled ? 'iv-pill-active' : ''}`}
+                  onClick={handleToggleTTS}
+                  title={isTTSEnabled ? 'Mute AI voice' : 'Unmute AI voice'}
                 >
-                  <VolumeX className="w-3.5 h-3.5" />
-                  <span>Mute All</span>
+                  {isTTSEnabled ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                  <span>{isTTSEnabled ? 'Mute All' : 'Unmute'}</span>
                 </button>
               </div>
 
