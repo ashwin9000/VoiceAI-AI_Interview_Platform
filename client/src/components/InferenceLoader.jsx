@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Cpu, Zap, CheckCircle2, BrainCircuit, Server } from 'lucide-react';
+import { Cpu, Zap, CheckCircle2, Server } from 'lucide-react';
 
 /**
  * InferenceLoader — An immersive, animated loading screen shown while
@@ -54,7 +54,7 @@ const InferenceLoader = ({ steps = [], currentStep = 0 }) => {
 
           {/* Inner icon */}
           <div className="absolute inset-0 flex items-center justify-center z-10">
-            <BrainCircuit className="w-12 h-12 text-white drop-shadow-lg" strokeWidth={1.5} />
+            <img src="/assets/logo.png" alt="VoiceAI" className="w-12 h-12 object-contain drop-shadow-lg" />
           </div>
 
           {/* Orbiting particles */}

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-  BrainCircuit, LayoutDashboard, PlayCircle, User, LogOut, Menu, X
+  LayoutDashboard, PlayCircle, User, LogOut, Menu, X
 } from 'lucide-react';
 
 const Navbar = () => {
@@ -26,7 +26,7 @@ const Navbar = () => {
   const isActive = (path) => location.pathname === path;
 
   // Hide navbar on pages that use the Sidebar component
-  const sidebarPages = ['/dashboard', '/profile', '/interview', '/results', '/chat'];
+  const sidebarPages = ['/dashboard', '/profile', '/interview', '/results', '/chat', '/help'];
   const onSidebarPage = sidebarPages.some(p => location.pathname.startsWith(p));
   if (onSidebarPage) return null;
   if (location.pathname === '/' && !isAuthenticated) return null;
@@ -40,11 +40,9 @@ const Navbar = () => {
             to={isAuthenticated ? '/dashboard' : '/'}
             className="flex items-center gap-2.5 group"
           >
-            <div className="w-9 h-9 rounded-xl bg-[#000666] flex items-center justify-center">
-              <BrainCircuit className="w-5 h-5 text-white" />
-            </div>
+            <img src="/assets/logo.png" alt="VoiceAI" className="w-9 h-9 rounded-xl object-contain" />
             <span className="text-lg font-bold text-[#000666]">
-              AIVision
+              VoiceAI
             </span>
           </Link>
 

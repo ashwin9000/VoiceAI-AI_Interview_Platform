@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
-import { BrainCircuit, Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 
 const SignInPage = () => {
   const { login } = useAuth();
@@ -44,13 +44,11 @@ const SignInPage = () => {
           <div className="p-8 sm:p-10">
             {/* Logo */}
             <div className="flex justify-center mb-6">
-              <div className="w-12 h-12 rounded-xl bg-[#000666] flex items-center justify-center">
-                <BrainCircuit className="w-6 h-6 text-white" />
-              </div>
+              <img src="/assets/logo.png" alt="VoiceAI" className="w-12 h-12 rounded-xl object-contain" />
             </div>
 
             <h1 className="text-2xl font-bold text-[#191c1e] text-center mb-1">Welcome Back</h1>
-            <p className="text-sm text-[#767683] text-center mb-8">Sign in to continue to AIVision</p>
+            <p className="text-sm text-[#767683] text-center mb-8">Sign in to continue to VoiceAI</p>
 
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
               {/* Email */}

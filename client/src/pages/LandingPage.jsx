@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { BrainCircuit, Sparkles, ArrowRight } from 'lucide-react';
+import { Sparkles, ArrowRight } from 'lucide-react';
 
 const LandingPage = () => {
   const { isAuthenticated } = useAuth();
@@ -12,10 +12,8 @@ const LandingPage = () => {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           {/* Logo */}
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#000666] flex items-center justify-center">
-              <BrainCircuit className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-lg font-bold text-[#000666]">AIVision</span>
+            <img src="/assets/logo.png" alt="VoiceAI" className="w-9 h-9 rounded-xl object-contain" />
+            <span className="text-lg font-bold text-[#000666]">VoiceAI</span>
           </div>
 
           {/* Center Links */}
@@ -148,11 +146,11 @@ const LandingPage = () => {
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <BrainCircuit className="w-5 h-5 text-[#000666]" />
-                <span className="text-sm font-bold text-[#000666]">AIVision</span>
+                <img src="/assets/logo.png" alt="VoiceAI" className="w-5 h-5 object-contain" />
+                <span className="text-sm font-bold text-[#000666]">VoiceAI</span>
               </div>
               <p className="text-xs text-[#767683]">
-                © 2024 AIVision Platform. Empowering human potential
+                © 2024 VoiceAI Platform. Empowering human potential
                 <br />through analytical intelligence.
               </p>
             </div>

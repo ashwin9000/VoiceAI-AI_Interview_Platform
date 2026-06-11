@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { interviewAPI } from '../services/api';
 import ttsService from '../services/ttsService';
@@ -8,21 +8,77 @@ import VoiceRecorder from '../components/VoiceRecorder';
 import AudioWaveform from '../components/AudioWaveform';
 import toast from 'react-hot-toast';
 import {
-  BrainCircuit, AlertTriangle,
-  X, CheckCircle2, Mic, ArrowRight, Clock,
-  User, Check, Send, Loader2, MessageCircle, Eraser,
-  Volume2, VolumeX, StopCircle
+  AlertTriangle,
+  X, CheckCircle2, Mic, ArrowRight, ArrowLeft, Clock,
+  User, Send, Loader2, MessageCircle, Eraser,
+  Volume2, VolumeX, StopCircle, ChevronDown, ChevronUp,
+  Keyboard, RotateCcw, MicOff, Type
 } from 'lucide-react';
 
 /**
- * Interview phase definitions for the progress indicator.
+ * Interview phase definitions for the progress stepper.
  */
 const PHASES = [
-  { key: 'resume', label: 'Resume', icon: '📄' },
-  { key: 'technical', label: 'Technical', icon: '⚙️' },
-  { key: 'conceptual', label: 'Conceptual', icon: '💡' },
-  { key: 'behavioral', label: 'Behavioral', icon: '🤝' },
+  { key: 'resume', label: 'Resume', icon: '📄', color: '#10b981' },
+  { key: 'technical', label: 'Technical', icon: '💻', color: '#10b981' },
+  { key: 'conceptual', label: 'Conceptual', icon: '✨', color: '#7c3aed' },
+  { key: 'behavioral', label: 'Behavioral', icon: '🤝', color: '#9ca3af' },
 ];
+
+const getPhaseIndex = (phase) => {
+  const idx = PHASES.findIndex((p) => p.key === phase);
+  return idx >= 0 ? idx : 0;
+};
+
+const formatTimer = (seconds) => {
+  const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const secs = (seconds % 60).toString().padStart(2, '0');
+  return `${mins}:${secs}`;
+};
+
+/* ── Memoized: Single history item ───────────────────────────────────── */
+
+const HistoryItem = memo(({ item, index, isExpanded, onToggle }) => {
+  return (
+    <div className="iv-history-item">
+      <button
+        onClick={onToggle}
+        className="iv-history-btn"
+      >
+        <div className="iv-history-header">
+          <div className="iv-history-meta">
+            <span className="iv-history-badge">Q{index + 1}</span>
+            <span className="iv-history-type">{item.type}</span>
+            {item.isFollowUp && <span className="iv-history-followup">Follow-up</span>}
+          </div>
+          <div className="iv-history-actions">
+            <CheckCircle2 className="w-4 h-4" style={{ color: '#10b981' }} />
+            {isExpanded ? (
+              <ChevronUp className="w-4 h-4" style={{ color: '#767683' }} />
+            ) : (
+              <ChevronDown className="w-4 h-4" style={{ color: '#767683' }} />
+            )}
+          </div>
+        </div>
+        <p className={`iv-history-question ${isExpanded ? '' : 'iv-clamp-1'}`}>
+          {item.question}
+        </p>
+      </button>
+      {isExpanded && (
+        <div className="iv-history-answer-wrap">
+          <div className="iv-history-answer-label">
+            <User className="w-3 h-3" style={{ color: '#767683' }} />
+            <span>Your Answer</span>
+          </div>
+          <p className="iv-history-answer-text">{item.answer}</p>
+        </div>
+      )}
+    </div>
+  );
+});
+HistoryItem.displayName = 'HistoryItem';
+
+/* ── Main Interview Component ────────────────────────────────────────── */
 
 const InterviewPage = () => {
   const { id } = useParams();
@@ -34,7 +90,7 @@ const InterviewPage = () => {
   const [error, setError] = useState(null);
 
   // Dynamic question flow state
-  const [conversationHistory, setConversationHistory] = useState([]); // { question, answer, type, isFollowUp }
+  const [conversationHistory, setConversationHistory] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [currentAnswer, setCurrentAnswer] = useState('');
@@ -51,10 +107,17 @@ const InterviewPage = () => {
   const [isTTSEnabled, setIsTTSEnabled] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // History expansion
+  const [expandedHistoryIdx, setExpandedHistoryIdx] = useState(null);
+  const [showPreviousResponses, setShowPreviousResponses] = useState(false);
+
   const timerRef = useRef(null);
   const historyEndRef = useRef(null);
   const voiceRecorderRef = useRef(null);
   const lastSpokenQuestionRef = useRef(null);
+
+  // Total questions for progress (use from backend or fallback)
+  const totalQuestions = questionState?.totalQuestions || 10;
 
   // Fetch interview on mount
   useEffect(() => {
@@ -64,13 +127,11 @@ const InterviewPage = () => {
         const data = response.data.data;
         setInterview(data);
 
-        // Reconstruct state from existing interview data
         const questions = data.questions || [];
         const answers = data.answers || [];
         const state = data.questionState;
 
         if (questions.length > 0) {
-          // Build conversation history from already answered questions
           const history = [];
           for (let i = 0; i < questions.length; i++) {
             const answer = answers.find((a) => a.questionIndex === i);
@@ -86,17 +147,14 @@ const InterviewPage = () => {
           }
           setConversationHistory(history);
 
-          // The last question without an answer is the current question
           const lastQuestion = questions[questions.length - 1];
           const lastAnswered = answers.find((a) => a.questionIndex === questions.length - 1);
 
           if (lastAnswered) {
-            // All questions answered — check if complete
             if (state?.interviewPhase === 'complete') {
               setIsInterviewComplete(true);
               setCurrentQuestion(null);
             } else {
-              // Shouldn't happen normally — all answered but not complete
               setCurrentQuestion(null);
               setIsInterviewComplete(true);
             }
@@ -143,19 +201,12 @@ const InterviewPage = () => {
     }
   }, [conversationHistory, currentQuestion]);
 
-  // ──────────────────────────────────────────────
-  // TTS — Auto-speak new questions
-  // ──────────────────────────────────────────────
-
+  // TTS callbacks
   useEffect(() => {
-    // Wire up TTS callbacks
     ttsService.onStart = () => setIsSpeaking(true);
     ttsService.onEnd = () => setIsSpeaking(false);
     ttsService.onError = () => setIsSpeaking(false);
-
-    return () => {
-      ttsService.destroy();
-    };
+    return () => { ttsService.destroy(); };
   }, []);
 
   // Speak the current question when it changes
@@ -172,52 +223,47 @@ const InterviewPage = () => {
   }, [isTTSEnabled]);
 
   const toggleTTS = useCallback(() => {
-    setIsTTSEnabled(prev => !prev);
+    setIsTTSEnabled((prev) => !prev);
   }, []);
 
-  // VAD speech activity callback
-  const handleSpeechActivity = useCallback((isSpeaking) => {
-    // Future: could show visual indicators at the page level
+  const handleSpeechActivity = useCallback(() => {
+    // Future: visual indicators
   }, []);
 
-  // Stop TTS for current question only
   const handleStopSpeaking = useCallback(() => {
     ttsService.stop();
   }, []);
 
-  // Mute TTS for the rest of the interview session
   const handleMuteAllTTS = useCallback(() => {
     setIsTTSEnabled(false);
   }, []);
 
-  const formatTimer = (seconds) => {
-    const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
-    const secs = (seconds % 60).toString().padStart(2, '0');
-    return `${mins}:${secs}`;
-  };
+  const handleRepeatQuestion = useCallback(() => {
+    if (currentQuestion?.text) {
+      lastSpokenQuestionRef.current = null; // allow re-speak
+      ttsService.speak(currentQuestion.text);
+    }
+  }, [currentQuestion]);
 
   const handleTranscript = useCallback((text) => {
     setCurrentAnswer(text);
   }, []);
 
-  /**
-   * Clear the current answer transcript.
-   */
   const handleClearAnswer = useCallback(() => {
     setCurrentAnswer('');
     voiceRecorderRef.current?.clearTranscript();
   }, []);
 
-  /**
-   * Submit the current answer, receive the next question from AI.
-   */
+  const toggleHistoryItem = useCallback((idx) => {
+    setExpandedHistoryIdx((prev) => (prev === idx ? null : idx));
+  }, []);
+
   const handleSubmitAnswer = async () => {
     if (!currentAnswer.trim()) {
       toast.error('Please record or type your answer first.');
       return;
     }
 
-    // Stop TTS before submitting
     ttsService.stop();
     setIsSubmittingAnswer(true);
 
@@ -229,7 +275,6 @@ const InterviewPage = () => {
 
       const data = response.data.data;
 
-      // Add current Q&A to conversation history
       setConversationHistory((prev) => [
         ...prev,
         {
@@ -241,23 +286,19 @@ const InterviewPage = () => {
         },
       ]);
 
-      // Clear current answer and voice recorder
       setCurrentAnswer('');
       voiceRecorderRef.current?.clearTranscript();
 
-      // Update question state
       if (data.questionState) {
         setQuestionState(data.questionState);
       }
 
       if (data.isComplete) {
-        // Interview is complete — no more questions
         setIsInterviewComplete(true);
         setCurrentQuestion(null);
         if (timerRef.current) clearInterval(timerRef.current);
         toast.success('All questions completed! You can now end the interview.');
       } else if (data.nextQuestion) {
-        // Set the new question (TTS will auto-speak via useEffect)
         setCurrentQuestion({
           index: data.nextQuestion.index,
           text: data.nextQuestion.text,
@@ -275,9 +316,6 @@ const InterviewPage = () => {
     }
   };
 
-  /**
-   * End the interview and trigger AI evaluation.
-   */
   const handleEndInterview = async () => {
     setShowConfirmModal(false);
     setIsCompleting(true);
@@ -297,22 +335,9 @@ const InterviewPage = () => {
     }
   };
 
-  const getTypeColor = (t) => {
-    switch (t?.toLowerCase()) {
-      case 'technical': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500' };
-      case 'behavioral': return { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', dot: 'bg-purple-500' };
-      case 'conceptual': return { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', dot: 'bg-cyan-500' };
-      case 'resume-based': return { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200', dot: 'bg-pink-500' };
-      default: return { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', dot: 'bg-indigo-500' };
-    }
-  };
-
-  const getPhaseIndex = (phase) => {
-    const idx = PHASES.findIndex((p) => p.key === phase);
-    return idx >= 0 ? idx : 0;
-  };
-
   const answeredCount = conversationHistory.length;
+  const currentPhaseIdx = getPhaseIndex(questionState?.interviewPhase || 'resume');
+  const progressPercent = totalQuestions > 0 ? ((answeredCount) / totalQuestions) * 100 : 0;
 
   // --- Loading ---
   if (loading) {
@@ -349,8 +374,8 @@ const InterviewPage = () => {
       <div className="page-enter min-h-screen bg-[#f7f9fb]">
         <main className="min-h-screen flex items-center justify-center">
           <div className="card p-12 max-w-md w-full mx-4 text-center">
-            <div className="w-20 h-20 rounded-2xl bg-[#000666] flex items-center justify-center mx-auto mb-6 animate-pulse">
-              <BrainCircuit className="w-10 h-10 text-white" />
+            <div className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <img src="/assets/logo.png" alt="VoiceAI" className="w-20 h-20 object-contain animate-breathe" />
             </div>
             <LoadingSpinner size="lg" className="mb-5" />
             <h2 className="text-xl font-bold text-[#191c1e] mb-2">AI is Evaluating Your Interview</h2>
@@ -364,250 +389,123 @@ const InterviewPage = () => {
 
   // --- Main Interview UI ---
   return (
-    <div className="page-enter min-h-screen bg-[#f7f9fb]">
-      <main className="min-h-screen flex flex-col">
-        {/* ===== Sticky Top Bar ===== */}
-        <div className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-[#e5e7eb]">
-          <div className="px-6 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-sm font-medium text-[#191c1e]">Recording</span>
-            </div>
+    <div className="page-enter iv-page">
+      {/* ===== Top Navigation Bar ===== */}
+      <header className="iv-topbar">
+        <div className="iv-topbar-inner">
+          {/* Left: Back + Brand */}
+          <div className="iv-topbar-left">
+            <button
+              onClick={() => setShowConfirmModal(true)}
+              className="iv-back-btn"
+              title="Back"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <span className="iv-brand">VoiceAI</span>
+          </div>
 
-            {/* Phase Progress Indicator */}
-            <div className="hidden sm:flex items-center gap-1">
-              {PHASES.map((phase, i) => {
-                const currentPhaseIdx = getPhaseIndex(questionState?.interviewPhase || 'resume');
-                const isActive = i === currentPhaseIdx;
-                const isDone = i < currentPhaseIdx || questionState?.interviewPhase === 'complete';
-                return (
-                  <div key={phase.key} className="flex items-center">
-                    <div
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
-                        isActive
-                          ? 'bg-[#000666] text-white shadow-sm'
-                          : isDone
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-gray-50 text-[#767683] border border-gray-200'
-                      }`}
-                    >
-                      {isDone && !isActive ? (
-                        <CheckCircle2 className="w-3 h-3" />
-                      ) : (
-                        <span>{phase.icon}</span>
-                      )}
-                      <span className="hidden md:inline">{phase.label}</span>
-                    </div>
-                    {i < PHASES.length - 1 && (
-                      <div className={`w-4 h-0.5 mx-0.5 ${isDone ? 'bg-emerald-300' : 'bg-gray-200'}`} />
+          {/* Center: Phase Stepper */}
+          <nav className="iv-phase-stepper">
+            {PHASES.map((phase, i) => {
+              const isActive = i === currentPhaseIdx;
+              const isDone = i < currentPhaseIdx || questionState?.interviewPhase === 'complete';
+              return (
+                <div key={phase.key} className="iv-phase-item">
+                  <div
+                    className={`iv-phase-pill ${
+                      isActive ? 'iv-phase-active' : isDone ? 'iv-phase-done' : 'iv-phase-pending'
+                    }`}
+                  >
+                    <span className={`iv-phase-dot ${
+                      isActive ? 'iv-dot-active' : isDone ? 'iv-dot-done' : 'iv-dot-pending'
+                    }`} />
+                    {isDone && !isActive ? (
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    ) : (
+                      <span className="iv-phase-icon">{phase.icon}</span>
                     )}
+                    <span className="iv-phase-label">{phase.label}</span>
                   </div>
-                );
-              })}
-            </div>
+                  {i < PHASES.length - 1 && (
+                    <div className={`iv-phase-connector ${isDone ? 'iv-connector-done' : ''}`} />
+                  )}
+                </div>
+              );
+            })}
+          </nav>
 
-            <div className="flex items-center gap-3">
-              {/* TTS Toggle */}
-              <button
-                onClick={toggleTTS}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                  isTTSEnabled
-                    ? 'text-[#000666] bg-[#eef2ff] border-[#e0e0ff] hover:bg-[#e0e0ff]'
-                    : 'text-[#767683] bg-gray-50 border-gray-200 hover:bg-gray-100'
-                }`}
-                title={isTTSEnabled ? 'Disable AI voice' : 'Enable AI voice'}
-              >
-                {isTTSEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-                <span className="hidden sm:inline">{isTTSEnabled ? 'Voice On' : 'Voice Off'}</span>
-              </button>
-
-              <div className="flex items-center gap-2 bg-[#f7f9fb] border border-[#e5e7eb] rounded-full px-4 py-1.5">
-                <Clock className="w-4 h-4 text-[#000666]" />
-                <span className="text-sm font-mono font-semibold text-[#191c1e] tracking-wider">
-                  {formatTimer(timerSeconds)}
-                </span>
-              </div>
-              <button
-                onClick={() => setShowConfirmModal(true)}
-                className="text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-full border border-red-200 transition-all"
-              >
-                End
-              </button>
-            </div>
+          {/* Right: End Interview */}
+          <div className="iv-topbar-right">
+            <button
+              onClick={() => setShowConfirmModal(true)}
+              className="iv-end-btn"
+            >
+              End Interview
+            </button>
           </div>
         </div>
+      </header>
 
-        {/* ===== Scrollable Content ===== */}
-        <div className="flex-1 overflow-y-auto pb-24">
-          {/* AI Avatar Area */}
-          <div className="mx-6 mt-6 rounded-2xl bg-gradient-to-br from-cyan-100 via-purple-100 to-blue-100 min-h-[200px] relative flex items-center justify-center overflow-hidden">
-            {/* Decorative circles */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-              <div className="absolute -top-12 -left-12 w-48 h-48 bg-cyan-200/40 rounded-full blur-2xl" />
-              <div className="absolute -bottom-16 -right-16 w-56 h-56 bg-purple-200/40 rounded-full blur-2xl" />
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-blue-200/30 rounded-full blur-3xl" />
-            </div>
+      {/* ===== Main Content ===== */}
+      <main className="iv-main">
+        <div className="iv-content-wrapper">
 
-            {/* AI Bot Icon + Speaking Indicator */}
-            <div className="relative z-10 flex flex-col items-center gap-3">
-              <div className={`w-20 h-20 rounded-3xl bg-white/80 backdrop-blur-sm shadow-lg flex items-center justify-center border border-white/60 transition-all duration-300 ${
-                isSpeaking ? 'ring-4 ring-[#000666]/20 scale-105' : ''
-              }`}>
-                <BrainCircuit className="w-10 h-10 text-[#000666]" />
-              </div>
-
-              {/* Speaking indicator with waveform */}
-              {isSpeaking ? (
-                <div className="flex flex-col items-center gap-3">
-                  <div className="flex items-center gap-2 bg-[#000666]/90 backdrop-blur-sm rounded-full px-4 py-1.5 border border-[#000666]/30">
-                    <AudioWaveform isActive={true} barCount={4} className="h-4" />
-                    <span className="text-xs font-medium text-white">Speaking...</span>
-                  </div>
-
-                  {/* Stop Speaking Buttons */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleStopSpeaking}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-white/90 backdrop-blur-sm text-[#ba1a1a] border border-red-200 hover:bg-red-50 hover:border-red-300 transition-all shadow-sm"
-                    >
-                      <StopCircle className="w-3.5 h-3.5" />
-                      Stop Speaking
-                    </button>
-                    <button
-                      onClick={handleMuteAllTTS}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-white/90 backdrop-blur-sm text-[#767683] border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
-                      title="Disable voice for all remaining questions"
-                    >
-                      <VolumeX className="w-3.5 h-3.5" />
-                      Mute All
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 bg-white/70 backdrop-blur-sm rounded-full px-4 py-1.5 border border-white/50">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-xs font-medium text-[#191c1e]">AI Interviewer Active</span>
-                </div>
-              )}
-            </div>
-
-            {/* Webcam feed simulation – top-right */}
-            <div className="absolute top-4 right-4 w-16 h-16 rounded-xl bg-[#191c1e]/80 backdrop-blur-sm flex items-center justify-center border border-white/20 shadow-md">
-              <User className="w-7 h-7 text-white/70" />
-            </div>
-          </div>
-
-          {/* ===== Conversation History ===== */}
-          {conversationHistory.length > 0 && (
-            <div className="mx-6 mt-4">
-              <div className="flex items-center gap-2 mb-3">
-                <MessageCircle className="w-4 h-4 text-[#767683]" />
-                <span className="text-xs font-semibold text-[#767683] uppercase tracking-wider">
-                  Conversation History ({conversationHistory.length} answered)
+          {/* ===== Main Interview Card ===== */}
+          {currentQuestion && !isInterviewComplete ? (
+            <div className="iv-card question-enter">
+              {/* Progress Bar */}
+              <div className="iv-progress-section">
+                <span className="iv-progress-label">
+                  Question {answeredCount + 1} of {totalQuestions}
                 </span>
+                <div className="iv-progress-track">
+                  <div
+                    className="iv-progress-fill"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
               </div>
-              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
-                {conversationHistory.map((item, i) => {
-                  const colors = getTypeColor(item.type);
-                  return (
-                    <div key={i} className="rounded-xl border border-[#e5e7eb] bg-white overflow-hidden">
-                      {/* Question bubble */}
-                      <div className={`px-4 py-3 ${colors.bg} border-b ${colors.border}`}>
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <div className="w-5 h-5 rounded-md bg-[#000666] flex items-center justify-center">
-                            <BrainCircuit className="w-3 h-3 text-white" />
-                          </div>
-                          <span className={`text-[10px] font-semibold uppercase tracking-wider ${colors.text}`}>
-                            {item.type}{item.isFollowUp ? ' · Follow-up' : ''} · Q{i + 1}
-                          </span>
-                        </div>
-                        <p className="text-sm text-[#191c1e] leading-relaxed">{item.question}</p>
-                      </div>
-                      {/* Answer bubble */}
-                      <div className="px-4 py-3 bg-white">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <div className="w-5 h-5 rounded-md bg-[#f0f0f5] flex items-center justify-center">
-                            <User className="w-3 h-3 text-[#767683]" />
-                          </div>
-                          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#767683]">
-                            Your Answer
-                          </span>
-                          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                        </div>
-                        <p className="text-sm text-[#454652] leading-relaxed line-clamp-3">{item.answer}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-                <div ref={historyEndRef} />
-              </div>
-            </div>
-          )}
 
-          {/* ===== Current Question Card ===== */}
-          {currentQuestion && !isInterviewComplete && (
-            <div className="card p-6 mx-6 mt-4 relative z-10 border-2 border-[#000666]/10">
-              {/* Header row */}
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-semibold tracking-wider text-indigo-600 uppercase">
-                  Question {answeredCount + 1}
-                  {currentQuestion.isFollowUp && (
-                    <span className="ml-2 text-amber-600">· Follow-up</span>
+              {/* AI Avatar */}
+              <div className="iv-avatar-section">
+                <div className="iv-avatar-container">
+                  <div className={`iv-avatar ${isSpeaking ? 'iv-avatar-speaking' : 'iv-avatar-idle'}`}>
+                    <img src="/assets/logo.png" alt="AI Interviewer" className="iv-avatar-img" />
+                  </div>
+                  {/* Green active dot */}
+                  <div className="iv-avatar-status-dot" />
+                  {/* Speaking rings */}
+                  {isSpeaking && (
+                    <>
+                      <div className="speaking-ring" />
+                      <div className="speaking-ring speaking-ring-delayed" />
+                    </>
                   )}
-                </span>
-                {currentQuestion.type && (
-                  <span className={`text-xs font-medium px-3 py-1 rounded-full border ${getTypeColor(currentQuestion.type).bg} ${getTypeColor(currentQuestion.type).text} ${getTypeColor(currentQuestion.type).border}`}>
-                    {currentQuestion.type}
-                  </span>
+                </div>
+
+                {/* Waveform indicator */}
+                <div className="iv-waveform-indicator">
+                  <AudioWaveform isActive={isSpeaking} barCount={5} className="h-5" />
+                </div>
+              </div>
+
+              {/* Question Text */}
+              <div className="iv-question-text">
+                <p>{currentQuestion.text}</p>
+              </div>
+
+              {/* Answer Input Area */}
+              <div className="iv-answer-area">
+                {currentAnswer.trim() ? (
+                  <p className="iv-answer-text">{currentAnswer}</p>
+                ) : (
+                  <p className="iv-answer-placeholder">Listening...</p>
                 )}
               </div>
 
-              {/* Question text */}
-              <p className="text-lg sm:text-xl font-bold text-[#191c1e] leading-relaxed mb-4">
-                &ldquo;{currentQuestion.text}&rdquo;
-              </p>
-
-              {/* Inline TTS controls — visible while AI is speaking the question */}
-              {isSpeaking && (
-                <div className="flex items-center gap-2 mb-4 p-3 rounded-xl bg-[#000666]/5 border border-[#000666]/10">
-                  <div className="flex items-center gap-1.5 mr-auto">
-                    <AudioWaveform isActive={true} barCount={3} className="h-3" />
-                    <span className="text-xs font-medium text-[#000666]">Reading aloud...</span>
-                  </div>
-                  <button
-                    onClick={handleStopSpeaking}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-[#ba1a1a] bg-white border border-red-200 hover:bg-red-50 transition-all"
-                  >
-                    <StopCircle className="w-3.5 h-3.5" />
-                    Stop Reading
-                  </button>
-                  <button
-                    onClick={handleMuteAllTTS}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-[#767683] bg-white border border-gray-200 hover:bg-gray-50 transition-all"
-                    title="Disable voice for all remaining questions"
-                  >
-                    <VolumeX className="w-3.5 h-3.5" />
-                    Mute All
-                  </button>
-                </div>
-              )}
-
-              {/* Answer input area */}
-              <div className="bg-[#f7f9fb] rounded-xl p-5 border border-[#e5e7eb]">
-                <div className="flex items-start gap-3 mb-4">
-                  <div className="w-9 h-9 rounded-lg bg-[#eef2ff] flex items-center justify-center flex-shrink-0">
-                    <Mic className="w-4 h-4 text-[#000666]" />
-                  </div>
-                  <div className="flex-1">
-                    {currentAnswer.trim() ? (
-                      <p className="text-sm text-[#191c1e] leading-relaxed">{currentAnswer}</p>
-                    ) : (
-                      <p className="text-sm text-[#767683] italic">Your answer will appear here...</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* VoiceRecorder — persistent connection, VAD-driven */}
+              {/* Hidden VoiceRecorder — functional but visually replaced */}
+              <div className="iv-voice-recorder-hidden">
                 <VoiceRecorder
                   ref={voiceRecorderRef}
                   onTranscript={handleTranscript}
@@ -615,144 +513,195 @@ const InterviewPage = () => {
                   onSpeechActivity={handleSpeechActivity}
                   isTTSSpeaking={isSpeaking}
                 />
+              </div>
 
-                {/* Clear Answer Button */}
-                {currentAnswer.trim() && (
-                  <div className="mt-3 flex justify-end">
-                    <button
-                      onClick={handleClearAnswer}
-                      disabled={isSubmittingAnswer}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Eraser className="w-3.5 h-3.5" />
-                      Clear Answer
-                    </button>
+              {/* Action Pills Row */}
+              <div className="iv-action-pills">
+                <button className="iv-pill" onClick={() => {
+                  // Toggle text input in VoiceRecorder
+                }} title="Switch to text input">
+                  <Keyboard className="w-3.5 h-3.5" />
+                  <span>Type</span>
+                </button>
+                <button
+                  className="iv-pill"
+                  onClick={handleClearAnswer}
+                  disabled={!currentAnswer.trim() || isSubmittingAnswer}
+                  title="Erase answer"
+                >
+                  <Eraser className="w-3.5 h-3.5" />
+                  <span>Erase</span>
+                </button>
+                {isSpeaking && (
+                  <button className="iv-pill" onClick={handleStopSpeaking} title="Stop AI speaking">
+                    <StopCircle className="w-3.5 h-3.5" />
+                    <span>Stop</span>
+                  </button>
+                )}
+                <button
+                  className="iv-pill"
+                  onClick={handleMuteAllTTS}
+                  title="Mute all AI voice"
+                >
+                  <VolumeX className="w-3.5 h-3.5" />
+                  <span>Mute All</span>
+                </button>
+              </div>
+
+              {/* Bottom Controls */}
+              <div className="iv-bottom-controls">
+                {/* Left: Repeat Question */}
+                <button className="iv-repeat-btn" onClick={handleRepeatQuestion} title="Repeat question">
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Repeat Question</span>
+                </button>
+
+                {/* Center: Mic Button */}
+                <div className="iv-mic-center">
+                  <button className={`iv-mic-btn ${isSpeaking ? 'iv-mic-muted' : ''}`} title="Microphone">
+                    {isSpeaking ? (
+                      <MicOff className="w-6 h-6" />
+                    ) : (
+                      <Mic className="w-6 h-6" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Right: Submit Answer */}
+                {isSubmittingAnswer ? (
+                  <div className="iv-submit-btn iv-submit-loading">
+                    <div className="flex gap-1.5">
+                      <div className="typing-dot" />
+                      <div className="typing-dot" />
+                      <div className="typing-dot" />
+                    </div>
+                    <span>Thinking...</span>
                   </div>
+                ) : (
+                  <button
+                    onClick={handleSubmitAnswer}
+                    disabled={!currentAnswer.trim()}
+                    className={`iv-submit-btn ${currentAnswer.trim() ? 'iv-submit-active' : 'iv-submit-disabled'}`}
+                  >
+                    <span>Submit Answer</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
                 )}
               </div>
-
-              {/* Answer recorded indicator */}
-              {currentAnswer.trim() && (
-                <div className="mt-4 flex items-center gap-2 text-emerald-600">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span className="text-xs font-medium uppercase tracking-wider">Answer recorded</span>
-                </div>
-              )}
             </div>
-          )}
+          ) : null}
 
           {/* ===== Interview Complete Card ===== */}
-          {isInterviewComplete && !isCompleting && (
-            <div className="card p-8 mx-6 mt-4 text-center border-2 border-emerald-200 bg-emerald-50/50">
-              <div className="w-16 h-16 rounded-2xl bg-emerald-100 flex items-center justify-center mx-auto mb-4 border border-emerald-200">
-                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+          {isInterviewComplete && !isCompleting ? (
+            <div className="iv-card iv-complete-card">
+              <div className="iv-complete-icon">
+                <CheckCircle2 className="w-10 h-10" style={{ color: '#10b981' }} />
               </div>
-              <h2 className="text-xl font-bold text-[#191c1e] mb-2">All Questions Completed!</h2>
-              <p className="text-sm text-[#767683] mb-1">
-                You've answered {answeredCount} questions across all interview phases.
+              <h2 className="iv-complete-title">All Questions Completed!</h2>
+              <p className="iv-complete-subtitle">
+                You&apos;ve answered {answeredCount} questions across all interview phases.
               </p>
-              <p className="text-xs text-[#c6c5d4] mb-6">
+              <p className="iv-complete-hint">
                 Click &quot;End Interview&quot; below to get your AI evaluation report.
               </p>
               <button
                 onClick={() => setShowConfirmModal(true)}
-                className="inline-flex items-center gap-2 px-8 py-3 rounded-full text-sm font-semibold bg-[#000666] text-white hover:bg-[#4e45d5] transition-all shadow-md"
+                className="iv-submit-btn iv-submit-active mt-6"
               >
                 End Interview & Get Results
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
-          )}
-        </div>
+          ) : null}
 
-        {/* ===== Sticky Bottom Controls ===== */}
-        {!isInterviewComplete && currentQuestion && (
-          <div className="sticky bottom-0 z-30 bg-white/90 backdrop-blur-md border-t border-[#e5e7eb]">
-            <div className="px-6 py-4 flex items-center justify-between">
-              {/* Left: Question counter */}
-              <div className="flex items-center gap-2 text-sm text-[#767683]">
-                <span className="font-medium">{answeredCount} answered</span>
-                <span className="text-[#c6c5d4]">·</span>
-                <span className="capitalize">{questionState?.interviewPhase || 'resume'} phase</span>
-              </div>
-
-              {/* Right: Submit Answer */}
-              {isSubmittingAnswer ? (
-                <div className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold bg-[#000666]/80 text-white">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  AI is thinking...
+          {/* ===== Previous Responses Accordion ===== */}
+          {conversationHistory.length > 0 && (
+            <div className="iv-prev-responses">
+              <button
+                className="iv-prev-toggle"
+                onClick={() => setShowPreviousResponses(!showPreviousResponses)}
+              >
+                <div className="iv-prev-toggle-left">
+                  <Clock className="w-5 h-5" style={{ color: '#767683' }} />
+                  <span>Previous Responses</span>
                 </div>
-              ) : (
-                <button
-                  onClick={handleSubmitAnswer}
-                  disabled={!currentAnswer.trim()}
-                  className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition-all shadow-md ${
-                    currentAnswer.trim()
-                      ? 'bg-[#000666] text-white hover:bg-[#4e45d5]'
-                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                  }`}
-                >
-                  Submit Answer
-                  <Send className="w-4 h-4" />
-                </button>
+                {showPreviousResponses ? (
+                  <ChevronUp className="w-5 h-5" style={{ color: '#767683' }} />
+                ) : (
+                  <ChevronDown className="w-5 h-5" style={{ color: '#767683' }} />
+                )}
+              </button>
+              {showPreviousResponses && (
+                <div className="iv-prev-list">
+                  {conversationHistory.map((item, i) => (
+                    <HistoryItem
+                      key={i}
+                      item={item}
+                      index={i}
+                      isExpanded={expandedHistoryIdx === i}
+                      onToggle={() => toggleHistoryItem(i)}
+                    />
+                  ))}
+                  <div ref={historyEndRef} />
+                </div>
               )}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </main>
 
       {/* ===== Confirmation Modal ===== */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setShowConfirmModal(false)} />
-          <div className="relative card p-8 max-w-md w-full text-center">
+      {showConfirmModal ? (
+        <div className="iv-modal-overlay">
+          <div className="iv-modal-backdrop" onClick={() => setShowConfirmModal(false)} />
+          <div className="iv-modal animate-scale-in">
             <button
               onClick={() => setShowConfirmModal(false)}
-              className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center text-[#767683] hover:text-[#191c1e] hover:bg-gray-100 transition-all"
+              className="iv-modal-close"
             >
               <X className="w-4 h-4" />
             </button>
 
-            <div className="w-16 h-16 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-5 border border-red-100">
-              <AlertTriangle className="w-8 h-8 text-[#ba1a1a]" />
+            <div className="iv-modal-icon-wrap iv-modal-icon-danger">
+              <AlertTriangle className="w-8 h-8" style={{ color: '#ba1a1a' }} />
             </div>
 
-            <h3 className="text-xl font-bold text-[#191c1e] mb-2">End Interview?</h3>
-            <p className="text-sm text-[#767683] mb-2">
+            <h3 className="iv-modal-title">End Interview?</h3>
+            <p className="iv-modal-desc">
               {isInterviewComplete
                 ? 'Your interview is complete. Submit for AI evaluation?'
                 : 'Are you sure you want to end the interview early?'}
             </p>
-            {!isInterviewComplete && (
-              <p className="text-xs text-amber-600 font-medium mb-4">
+            {!isInterviewComplete ? (
+              <p className="iv-modal-warning">
                 Some question phases may not be completed yet.
               </p>
-            )}
+            ) : null}
 
-            <div className="card-flat p-4 rounded-xl mb-6 flex items-center justify-around text-center">
-              <div>
-                <p className="text-lg font-bold text-[#191c1e]">{answeredCount}</p>
-                <p className="text-xs text-[#767683]">Answered</p>
+            <div className="iv-modal-stats">
+              <div className="iv-modal-stat">
+                <p className="iv-modal-stat-value">{answeredCount}</p>
+                <p className="iv-modal-stat-label">Answered</p>
               </div>
-              <div className="w-px h-10 bg-gray-200" />
-              <div>
-                <p className="text-lg font-bold text-[#191c1e] capitalize">{questionState?.interviewPhase || 'resume'}</p>
-                <p className="text-xs text-[#767683]">Phase</p>
+              <div className="iv-modal-stat-divider" />
+              <div className="iv-modal-stat">
+                <p className="iv-modal-stat-value iv-capitalize">{questionState?.interviewPhase || 'resume'}</p>
+                <p className="iv-modal-stat-label">Phase</p>
               </div>
-              <div className="w-px h-10 bg-gray-200" />
-              <div>
-                <p className="text-lg font-bold font-mono text-[#191c1e]">{formatTimer(timerSeconds)}</p>
-                <p className="text-xs text-[#767683]">Duration</p>
+              <div className="iv-modal-stat-divider" />
+              <div className="iv-modal-stat">
+                <p className="iv-modal-stat-value iv-mono">{formatTimer(timerSeconds)}</p>
+                <p className="iv-modal-stat-label">Duration</p>
               </div>
             </div>
 
-            <div className="flex gap-3">
-              <button onClick={() => setShowConfirmModal(false)} className="btn-secondary flex-1 py-3 text-sm rounded-full">
+            <div className="iv-modal-actions">
+              <button onClick={() => setShowConfirmModal(false)} className="iv-modal-btn-secondary">
                 Continue
               </button>
               <button
                 onClick={handleEndInterview}
-                className="flex-1 py-3 rounded-full text-sm font-semibold bg-[#ba1a1a] text-white hover:bg-red-700 transition-all flex items-center justify-center gap-2"
+                className="iv-modal-btn-danger"
               >
                 End Interview
                 <ArrowRight className="w-4 h-4" />
@@ -760,7 +709,7 @@ const InterviewPage = () => {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };

@@ -1,7 +1,9 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import LoadingSpinner from './components/LoadingSpinner';
 
 // Pages
 import LandingPage from './pages/LandingPage';
@@ -13,6 +15,16 @@ import StartInterviewPage from './pages/StartInterviewPage';
 import InterviewPage from './pages/InterviewPage';
 import ResultsPage from './pages/ResultsPage';
 import ChatPage from './pages/ChatPage';
+
+// Lazy-loaded pages (non-critical path — bundle optimization)
+const HelpPage = lazy(() => import('./pages/HelpPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+
+const LazyFallback = () => (
+  <div className="min-h-screen bg-[#f7f9fb] flex items-center justify-center">
+    <LoadingSpinner size="lg" text="Loading..." />
+  </div>
+);
 
 function App() {
   return (
@@ -100,6 +112,26 @@ function App() {
               <ProtectedRoute>
                 <ChatPage />
               </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/help"
+            element={
+              <ProtectedRoute>
+                <Suspense fallback={<LazyFallback />}>
+                  <HelpPage />
+                </Suspense>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* 404 Catch-All */}
+          <Route
+            path="*"
+            element={
+              <Suspense fallback={<LazyFallback />}>
+                <NotFoundPage />
+              </Suspense>
             }
           />
         </Routes>

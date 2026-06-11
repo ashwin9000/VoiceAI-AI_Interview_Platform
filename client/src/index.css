@@ -491,6 +491,852 @@
   animation: inferenceShimmer 1.5s ease-in-out infinite;
 }
 
+/* ===== Interview Page — Full Redesign ===== */
+
+/* Page background */
+.iv-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #eceef0 0%, #f7f9fb 40%);
+}
+
+/* ── Top Navigation Bar ── */
+.iv-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: #ffffff;
+  border-bottom: 1px solid #e6e8ea;
+}
+.iv-topbar-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.iv-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.iv-back-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #191c1e;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.iv-back-btn:hover {
+  background: #f2f4f6;
+}
+.iv-brand {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: #000666;
+  letter-spacing: -0.5px;
+}
+.iv-topbar-right {
+  flex-shrink: 0;
+}
+.iv-end-btn {
+  padding: 8px 20px;
+  border-radius: 9999px;
+  border: 1px solid #e0e3e5;
+  background: #ffffff;
+  color: #191c1e;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.iv-end-btn:hover {
+  background: #f7f9fb;
+  border-color: #c6c5d4;
+}
+
+/* ── Phase Stepper ── */
+.iv-phase-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.iv-phase-item {
+  display: flex;
+  align-items: center;
+}
+.iv-phase-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  transition: all 0.3s;
+  white-space: nowrap;
+}
+.iv-phase-active {
+  background: #ffffff;
+  border-color: #000666;
+  color: #000666;
+  box-shadow: 0 0 0 3px rgba(0, 6, 102, 0.08);
+}
+.iv-phase-done {
+  background: transparent;
+  color: #454652;
+}
+.iv-phase-pending {
+  background: transparent;
+  color: #c6c5d4;
+}
+.iv-phase-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+.iv-dot-active {
+  background: #7c3aed;
+}
+.iv-dot-done {
+  background: #10b981;
+}
+.iv-dot-pending {
+  background: #c6c5d4;
+}
+.iv-phase-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+.iv-phase-label {
+  line-height: 1;
+}
+.iv-phase-connector {
+  width: 32px;
+  height: 2px;
+  background: #e0e3e5;
+  margin: 0 4px;
+  transition: background 0.3s;
+}
+.iv-connector-done {
+  background: #c6c5d4;
+}
+
+/* ── Main Content Layout ── */
+.iv-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 24px 48px;
+}
+.iv-content-wrapper {
+  width: 100%;
+  max-width: 780px;
+}
+
+/* ── Main Interview Card ── */
+.iv-card {
+  background: #ffffff;
+  border-radius: 24px;
+  border: 1px solid #e6e8ea;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04), 0 1px 4px rgba(0, 0, 0, 0.02);
+  padding: 32px 36px;
+  transition: box-shadow 0.3s;
+}
+
+/* ── Progress Section ── */
+.iv-progress-section {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.iv-progress-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #767683;
+  margin-bottom: 10px;
+  display: block;
+}
+.iv-progress-track {
+  width: 100%;
+  height: 4px;
+  background: #e0e3e5;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.iv-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #000666, #4e45d5);
+  border-radius: 2px;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── AI Avatar Section ── */
+.iv-avatar-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 24px;
+}
+.iv-avatar-container {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  margin-bottom: 8px;
+}
+.iv-avatar {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e0e0ff 0%, #f0eeff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid #e0e0ff;
+  transition: all 0.3s;
+  position: relative;
+  z-index: 2;
+}
+.iv-avatar-idle {
+  box-shadow: 0 0 0 6px rgba(189, 194, 255, 0.25);
+}
+.iv-avatar-speaking {
+  box-shadow: 0 0 0 8px rgba(78, 69, 213, 0.2);
+  border-color: #bdc2ff;
+}
+.iv-avatar-img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  animation: breathe 3s ease-in-out infinite;
+}
+.iv-avatar-status-dot {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #10b981;
+  border: 3px solid #ffffff;
+  z-index: 3;
+}
+.iv-waveform-indicator {
+  display: flex;
+  justify-content: center;
+  height: 20px;
+}
+
+/* Breathing animation */
+@keyframes breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+.animate-breathe {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+/* Speaking ring pulse */
+@keyframes ringPulse {
+  0% { transform: scale(1); opacity: 0.4; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+.speaking-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(78, 69, 213, 0.4);
+  animation: ringPulse 2s ease-out infinite;
+  z-index: 1;
+}
+.speaking-ring-delayed {
+  animation-delay: 0.8s;
+}
+
+/* ── Question Text ── */
+.iv-question-text {
+  text-align: center;
+  margin-bottom: 24px;
+  padding: 0 16px;
+}
+.iv-question-text p {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 28px;
+  color: #191c1e;
+  letter-spacing: 0.1px;
+}
+
+/* ── Answer Area ── */
+.iv-answer-area {
+  background: #f2f4f6;
+  border-radius: 16px;
+  padding: 20px 24px;
+  min-height: 80px;
+  margin-bottom: 20px;
+}
+.iv-answer-text {
+  font-size: 15px;
+  line-height: 24px;
+  color: #191c1e;
+}
+.iv-answer-placeholder {
+  font-size: 15px;
+  line-height: 24px;
+  color: #c6c5d4;
+  font-style: italic;
+}
+
+/* Hidden VoiceRecorder wrapper — positioned offscreen but still functional */
+.iv-voice-recorder-hidden {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* ── Action Pills ── */
+.iv-action-pills {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+.iv-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  border: 1px solid #e0e3e5;
+  background: #ffffff;
+  color: #454652;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.iv-pill:hover {
+  background: #f2f4f6;
+  border-color: #c6c5d4;
+}
+.iv-pill:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.iv-pill:disabled:hover {
+  background: #ffffff;
+  border-color: #e0e3e5;
+}
+
+/* ── Bottom Controls ── */
+.iv-bottom-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 20px;
+  border-top: 1px solid #eceef0;
+}
+.iv-repeat-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  background: none;
+  border: none;
+  color: #767683;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.iv-repeat-btn:hover {
+  color: #454652;
+}
+
+/* Center Mic Button */
+.iv-mic-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.iv-mic-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #fee2e2, #fecaca);
+  color: #ba1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 4px 14px rgba(186, 26, 26, 0.12);
+}
+.iv-mic-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px rgba(186, 26, 26, 0.18);
+}
+.iv-mic-muted {
+  background: linear-gradient(135deg, #fecaca, #fca5a5);
+}
+
+/* Submit Button */
+.iv-submit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+.iv-submit-active {
+  background: #000666;
+  color: #ffffff;
+  box-shadow: 0 4px 16px rgba(0, 6, 102, 0.2);
+}
+.iv-submit-active:hover {
+  background: #1a237e;
+  box-shadow: 0 6px 24px rgba(0, 6, 102, 0.3);
+  transform: translateY(-1px);
+}
+.iv-submit-disabled {
+  background: #e0e3e5;
+  color: #c6c5d4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.iv-submit-loading {
+  background: #000666;
+  color: #ffffff;
+  opacity: 0.85;
+  cursor: wait;
+}
+
+/* ── Interview Complete Card ── */
+.iv-complete-card {
+  text-align: center;
+  padding: 48px 36px;
+}
+.iv-complete-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  background: #ecfdf5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  border: 1px solid #d1fae5;
+}
+.iv-complete-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: #191c1e;
+  margin-bottom: 8px;
+}
+.iv-complete-subtitle {
+  font-size: 14px;
+  color: #767683;
+  margin-bottom: 4px;
+}
+.iv-complete-hint {
+  font-size: 12px;
+  color: #c6c5d4;
+}
+
+/* ── Previous Responses ── */
+.iv-prev-responses {
+  margin-top: 20px;
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e6e8ea;
+  overflow: hidden;
+}
+.iv-prev-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.iv-prev-toggle:hover {
+  background: #f7f9fb;
+}
+.iv-prev-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
+  font-weight: 500;
+  color: #191c1e;
+}
+.iv-prev-list {
+  padding: 0 24px 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* History Item */
+.iv-history-item {
+  margin-bottom: 12px;
+  border: 1px solid #eceef0;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.iv-history-item:hover {
+  border-color: #c6c5d4;
+}
+.iv-history-btn {
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.iv-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.iv-history-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.iv-history-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #000666;
+  background: #e0e0ff;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.iv-history-type {
+  font-size: 11px;
+  font-weight: 500;
+  color: #767683;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.iv-history-followup {
+  font-size: 10px;
+  color: #d97706;
+  font-weight: 500;
+}
+.iv-history-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.iv-history-question {
+  font-size: 14px;
+  color: #191c1e;
+  line-height: 20px;
+}
+.iv-clamp-1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.iv-history-answer-wrap {
+  padding: 14px 16px;
+  background: #f7f9fb;
+  border-top: 1px solid #eceef0;
+}
+.iv-history-answer-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #767683;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.iv-history-answer-text {
+  font-size: 13px;
+  color: #454652;
+  line-height: 20px;
+}
+
+/* ── Modal ── */
+.iv-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.iv-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(4px);
+}
+.iv-modal {
+  position: relative;
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 36px;
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.12);
+  border: 1px solid #e6e8ea;
+}
+.iv-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: #f2f4f6;
+  color: #767683;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.iv-modal-close:hover {
+  background: #e6e8ea;
+  color: #191c1e;
+}
+.iv-modal-icon-wrap {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+.iv-modal-icon-danger {
+  background: #fef2f2;
+  border: 1px solid #fee2e2;
+}
+.iv-modal-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #191c1e;
+  margin-bottom: 8px;
+}
+.iv-modal-desc {
+  font-size: 14px;
+  color: #767683;
+  margin-bottom: 8px;
+}
+.iv-modal-warning {
+  font-size: 12px;
+  color: #d97706;
+  font-weight: 500;
+  margin-bottom: 16px;
+}
+.iv-modal-stats {
+  background: #f7f9fb;
+  border: 1px solid #eceef0;
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  margin-bottom: 24px;
+}
+.iv-modal-stat {
+  text-align: center;
+}
+.iv-modal-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #191c1e;
+}
+.iv-modal-stat-label {
+  font-size: 12px;
+  color: #767683;
+  margin-top: 2px;
+}
+.iv-modal-stat-divider {
+  width: 1px;
+  height: 40px;
+  background: #e0e3e5;
+}
+.iv-capitalize {
+  text-transform: capitalize;
+}
+.iv-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+.iv-modal-actions {
+  display: flex;
+  gap: 12px;
+}
+.iv-modal-btn-secondary {
+  flex: 1;
+  padding: 12px 0;
+  border-radius: 9999px;
+  border: 1px solid #e0e3e5;
+  background: #ffffff;
+  color: #191c1e;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.iv-modal-btn-secondary:hover {
+  background: #f7f9fb;
+  border-color: #c6c5d4;
+}
+.iv-modal-btn-danger {
+  flex: 1;
+  padding: 12px 0;
+  border-radius: 9999px;
+  border: none;
+  background: #ba1a1a;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.iv-modal-btn-danger:hover {
+  background: #991b1b;
+}
+
+/* Question card entrance */
+.question-enter {
+  animation: fadeInUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* ── Preserved utilities ── */
+
+/* Accordion expand/collapse (Help page) */
+.accordion-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.25s ease;
+  opacity: 0;
+}
+.accordion-content.open {
+  max-height: 600px;
+  opacity: 1;
+}
+
+/* Phase pill active glow (kept for legacy) */
+.phase-pill-active {
+  box-shadow: 0 0 0 3px rgba(0, 6, 102, 0.12);
+}
+
+/* Custom scrollbar for conversation history */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #c6c5d4;
+  border-radius: 2px;
+}
+
+/* ── Interview Responsive ── */
+@media (max-width: 768px) {
+  .iv-topbar-inner {
+    padding: 10px 16px;
+  }
+  .iv-phase-stepper {
+    display: none;
+  }
+  .iv-card {
+    padding: 24px 20px;
+    border-radius: 20px;
+  }
+  .iv-main {
+    padding: 20px 16px 40px;
+  }
+  .iv-bottom-controls {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .iv-repeat-btn {
+    order: 2;
+    width: 100%;
+    justify-content: center;
+  }
+  .iv-mic-center {
+    order: 1;
+  }
+  .iv-submit-btn {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+  .iv-brand {
+    font-size: 18px;
+  }
+  .iv-question-text p {
+    font-size: 16px;
+    line-height: 24px;
+  }
+  .iv-action-pills {
+    gap: 6px;
+  }
+  .iv-pill {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .iv-end-btn {
+    padding: 6px 14px;
+    font-size: 12px;
+  }
+  .iv-card {
+    padding: 20px 16px;
+    border-radius: 16px;
+  }
+  .iv-submit-btn {
+    padding: 10px 20px;
+    font-size: 13px;
+  }
+}
+
 /* ===== Reduced Motion ===== */
 @media (prefers-reduced-motion: reduce) {
   *,

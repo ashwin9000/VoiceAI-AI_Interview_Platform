@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
-import { BrainCircuit, User, Mail, Lock } from 'lucide-react';
+import { User, Mail, Lock } from 'lucide-react';
 
 const SignUpPage = () => {
   const { signup } = useAuth();
@@ -37,7 +37,10 @@ const SignUpPage = () => {
     <div className="min-h-screen bg-gradient-subtle flex flex-col items-center justify-center px-4 py-12">
       {/* Header */}
       <div className="text-center mb-8 animate-fade-in">
-        <h2 className="text-3xl font-bold text-[#000666] mb-2">AIVision</h2>
+        <div className="flex items-center justify-center gap-3 mb-2">
+          <img src="/assets/logo.png" alt="VoiceAI" className="w-10 h-10 rounded-xl object-contain" />
+          <h2 className="text-3xl font-bold text-[#000666]">VoiceAI</h2>
+        </div>
         <p className="text-[#767683]">Empowering human potential.</p>
       </div>
 
