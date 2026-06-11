@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from app.auth import CurrentUserId
 from app.graph import chat_graph
-from app.vectorstore import ensure_user_indexed, reindex_user
+from app.vectorstore import ensure_user_indexed, get_index_status, reindex_user
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,20 @@ class ReindexResponse(BaseModel):
 
     success: bool
     documents_indexed: int
+
+
+class IndexStatusResponse(BaseModel):
+    """Diagnostic information about a user's index state."""
+
+    user_id: str
+    mongo_interview_count: int
+    cached_count: int | None
+    chroma_doc_count: int
+    chroma_interview_count: int
+    chroma_interview_ids: list[str]
+    chroma_interviews: list[dict]
+    needs_reindex: bool
+    collection_name: str
 
 
 class ChatHistoryMessage(BaseModel):
@@ -228,3 +242,16 @@ async def get_chat_history(
         messages = []
 
     return ChatHistoryResponse(session_id=session_id, messages=messages)
+
+
+@router.get("/debug/status")
+async def debug_index_status(
+    user_id: CurrentUserId,
+) -> IndexStatusResponse:
+    """
+    Diagnostic endpoint: show the current index state for the authenticated user.
+    Returns MongoDB count, ChromaDB count, cached count, and whether reindex is needed.
+    """
+    logger.info("Debug status request from user %s", user_id)
+    status = await asyncio.to_thread(get_index_status, user_id)
+    return IndexStatusResponse(**status)

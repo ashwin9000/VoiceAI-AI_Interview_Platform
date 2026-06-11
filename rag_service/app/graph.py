@@ -214,6 +214,19 @@ def retrieve(state: ChatState) -> dict:
                 }
             )
 
+    # Log retrieval diagnostics for debugging stale data issues
+    for i, doc in enumerate(retrieved_docs):
+        meta = doc["metadata"]
+        logger.info(
+            "  [Retrieved doc %d] interview=%s | date=%s | "
+            "type=%s | score=%s | preview=%.100s…",
+            i + 1,
+            meta.get("interview_id", "?")[:12],
+            meta.get("date", "?"),
+            meta.get("doc_type", "?"),
+            meta.get("score", "?"),
+            doc["content"][:100].replace("\n", " "),
+        )
     logger.info(
         "Retrieved %d docs from %d interviews for query: %.60s…",
         len(retrieved_docs),

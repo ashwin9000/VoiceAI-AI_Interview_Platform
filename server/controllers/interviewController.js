@@ -293,6 +293,29 @@ const completeInterview = async (req, res, next) => {
     }
     await interview.save();
 
+    // Proactively trigger RAG reindex so the new interview is searchable
+    // immediately, rather than waiting until the user's next chat message.
+    // Fire-and-forget: failures are logged but don't block the response.
+    const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL || 'http://localhost:8000';
+    try {
+      const reindexUrl = new URL('/chat/reindex', RAG_SERVICE_URL);
+      const lib = reindexUrl.protocol === 'https:' ? require('https') : require('http');
+      const reindexReq = lib.request(reindexUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: req.headers.authorization,
+        },
+      });
+      reindexReq.on('error', (err) => {
+        console.warn('⚠️ RAG reindex trigger failed (non-blocking):', err.message);
+      });
+      reindexReq.end();
+      console.log('✅ RAG reindex triggered for interview', interview._id.toString());
+    } catch (reindexErr) {
+      console.warn('⚠️ Could not trigger RAG reindex:', reindexErr.message);
+    }
+
     res.status(200).json({
       success: true,
       data: report,
