@@ -41,10 +41,6 @@ const validateResumeAnalysis = (data) => {
     return { valid: false, reason: 'Missing or invalid "education" array' };
   }
 
-  if (typeof data.summary !== 'string') {
-    return { valid: false, reason: 'Missing or invalid "summary" field' };
-  }
-
   return { valid: true };
 };
 

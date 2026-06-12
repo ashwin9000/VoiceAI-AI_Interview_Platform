@@ -75,13 +75,9 @@ const RESUME_JSON_SCHEMA = {
           required: ['degree', 'institution', 'year'],
         },
       },
-
-      summary: {
-        type: 'string',
-      },
     },
 
-    required: ['skills', 'experience', 'projects', 'education', 'summary'],
+    required: ['skills', 'experience', 'projects', 'education'],
   },
 };
 

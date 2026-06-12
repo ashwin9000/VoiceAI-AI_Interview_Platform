@@ -67,8 +67,7 @@ Output:
       "institution": "ABC University",
       "year": "2021-2025"
     }
-  ],
-  "summary": ""
+  ]
 }
 
 Example 2:
@@ -99,8 +98,7 @@ Output:
       "technologies": ["React", "Node.js", "MongoDB"]
     }
   ],
-  "education": [],
-  "summary": ""
+  "education": []
 }
 
 Now parse the following resume:

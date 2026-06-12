@@ -65,8 +65,8 @@ Output:
       "institution": "ABC University",
       "year": "2021-2025"
     }
-  ],
-  "summary": ""
+  ]
+
 }
 
 Example 2:
@@ -97,8 +97,7 @@ Output:
       "technologies": ["React", "Node.js", "MongoDB"]
     }
   ],
-  "education": [],
-  "summary": ""
+  "education": []
 }
 
 Now parse the following resume:
@@ -154,133 +153,130 @@ async function analyzeWithLlama(resumeText) {
     const start = Date.now();
 
     const response = await axios.post(
-    "http://localhost:8080/v1/chat/completions",
-    {
+      "http://localhost:8080/v1/chat/completions",
+      {
         messages: [
-        {
+          {
             role: "system",
             content:
-            "You are a resume parsing engine that outputs only valid JSON."
-        },
-        {
+              "You are a resume parsing engine that outputs only valid JSON."
+          },
+          {
             role: "user",
             content: getResumeAnalysisPrompt(resumeText)
-        }
+          }
         ],
 
         temperature: 0,
         top_p: 0.9,
 
         response_format: {
-        type: "json_schema",
-        json_schema: {
+          type: "json_schema",
+          json_schema: {
             name: "resume_schema",
             schema: {
-            type: "object",
+              type: "object",
 
-            properties: {
+              properties: {
                 skills: {
-                type: "array",
-                items: {
+                  type: "array",
+                  items: {
                     type: "string"
-                }
+                  }
                 },
 
                 experience: {
-                type: "array",
-                items: {
+                  type: "array",
+                  items: {
                     type: "object",
                     properties: {
-                    company: {
+                      company: {
                         type: "string"
-                    },
-                    role: {
+                      },
+                      role: {
                         type: "string"
-                    },
-                    duration: {
+                      },
+                      duration: {
                         type: "string"
-                    },
-                    highlights: {
+                      },
+                      highlights: {
                         type: "array",
                         items: {
-                        type: "string"
+                          type: "string"
                         }
-                    }
+                      }
                     },
                     required: [
-                    "company",
-                    "role",
-                    "duration",
-                    "highlights"
+                      "company",
+                      "role",
+                      "duration",
+                      "highlights"
                     ]
-                }
+                  }
                 },
 
                 projects: {
-                type: "array",
-                items: {
+                  type: "array",
+                  items: {
                     type: "object",
                     properties: {
-                    name: {
+                      name: {
                         type: "string"
-                    },
-                    description: {
+                      },
+                      description: {
                         type: "string"
-                    },
-                    technologies: {
+                      },
+                      technologies: {
                         type: "array",
                         items: {
-                        type: "string"
+                          type: "string"
                         }
-                    }
+                      }
                     },
                     required: [
-                    "name",
-                    "description",
-                    "technologies"
+                      "name",
+                      "description",
+                      "technologies"
                     ]
-                }
+                  }
                 },
 
                 education: {
-                type: "array",
-                items: {
+                  type: "array",
+                  items: {
                     type: "object",
                     properties: {
-                    degree: {
+                      degree: {
                         type: "string"
-                    },
-                    institution: {
+                      },
+                      institution: {
                         type: "string"
-                    },
-                    year: {
+                      },
+                      year: {
                         type: "string"
-                    }
+                      }
                     },
                     required: [
-                    "degree",
-                    "institution",
-                    "year"
+                      "degree",
+                      "institution",
+                      "year"
                     ]
-                }
+                  }
                 },
 
-                summary: {
-                type: "string"
-                }
-            },
 
-            required: [
+              },
+
+              required: [
                 "skills",
                 "experience",
                 "projects",
-                "education",
-                "summary"
-            ]
+                "education"
+              ]
             }
+          }
         }
-        }
-    }
+      }
     );
 
     const elapsed = Date.now() - start;

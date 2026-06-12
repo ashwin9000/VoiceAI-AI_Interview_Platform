@@ -47,6 +47,12 @@ const VoiceRecorder = forwardRef(({ onTranscript, disabled = false, onSpeechActi
   const textareaRef = useRef(null);
   const mountedRef = useRef(true);
   const mediaStreamRef = useRef(null);
+  const isTTSSpeakingRef = useRef(isTTSSpeaking);
+
+  // Keep ref in sync with prop so setTimeout closures see the latest value
+  useEffect(() => {
+    isTTSSpeakingRef.current = isTTSSpeaking;
+  }, [isTTSSpeaking]);
 
   // ──────────────────────────────────────────────
   // Initialize AssemblyAI + VAD (once on mount)
@@ -257,42 +263,31 @@ const VoiceRecorder = forwardRef(({ onTranscript, disabled = false, onSpeechActi
   // Intentionally no deps — init once on mount, destroy on unmount
 
   // ──────────────────────────────────────────────
-  // TTS ↔ VAD coordination (prop-driven, no callback chain)
+  // VAD ↔ TTS / disabled / text-mode coordination
+  //
+  // Single source of truth: pause VAD whenever ANY inhibiting condition
+  // is active (TTS speaking, component disabled, text-input mode).
+  // Resume only when ALL conditions are clear.
   // ──────────────────────────────────────────────
 
   useEffect(() => {
     if (!vadRef.current) return;
 
-    if (isTTSSpeaking) {
-      // TTS is speaking — pause VAD to prevent false triggers from TTS audio
+    const shouldPause = isTTSSpeaking || disabled || useTextInput;
+
+    if (shouldPause) {
       vadRef.current.pause();
       assemblyaiRef.current?.stopStreaming();
       setVadState('idle');
-      console.log('[VoiceRecorder] TTS speaking — VAD paused.');
-    } else {
-      // TTS finished — resume VAD to listen for user speech
-      vadRef.current.resume();
-      setVadState('listening');
-      console.log('[VoiceRecorder] TTS ended — VAD resumed.');
-    }
-  }, [isTTSSpeaking]);
-
-  // ──────────────────────────────────────────────
-  // Handle text input mode toggle
-  // ──────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!vadRef.current) return;
-
-    if (useTextInput || disabled) {
-      vadRef.current.pause();
-      assemblyaiRef.current?.stopStreaming();
-      setVadState('idle');
+      if (isTTSSpeaking) {
+        console.log('[VoiceRecorder] TTS speaking — VAD paused.');
+      }
     } else {
       vadRef.current.resume();
       setVadState('listening');
+      console.log('[VoiceRecorder] VAD resumed (TTS idle, enabled, voice mode).');
     }
-  }, [useTextInput, disabled]);
+  }, [isTTSSpeaking, disabled, useTextInput]);
 
   // ──────────────────────────────────────────────
   // Web Speech API Fallback (unchanged)
@@ -363,9 +358,13 @@ const VoiceRecorder = forwardRef(({ onTranscript, disabled = false, onSpeechActi
       if (vadRef.current) {
         vadRef.current.pause();
         setVadState('idle');
-        // Resume after the grace window so the user can keep speaking
+        // Resume after the grace window so the user can keep speaking.
+        // BUT: if TTS has started (or is about to start) speaking, do NOT
+        // resume — the isTTSSpeaking effect will handle resuming VAD when
+        // TTS ends. We check both the service singleton AND the React prop
+        // (via ref) to cover the full race window.
         setTimeout(() => {
-          if (vadRef.current && !useTextInput) {
+          if (vadRef.current && !useTextInput && !ttsService.isSpeaking && !isTTSSpeakingRef.current) {
             vadRef.current.resume();
             setVadState('listening');
           }

@@ -1,0 +1,6 @@
+what if the interview happens but fast api service gets cutoff now the indexing of latest questions didn't happen? how do you handle embedding lot of data immediately after coming back?
+
+in this case it is important to implement batching while considering the RPM with exponential back off strategy or else well hit the limit
+
+what if the immediately asks qn before reindexing happens?
+here's where the CAP theorem comes into play, we can either provide CP(consistency -- ask the user to wait so that latest data can be provided), AP(availability give the answer on already indexed data). but here in this specific usecase, if the user mentions any words like latest, etc, we don't need to perform similarity search and directly given latest interview from mongo as context to model

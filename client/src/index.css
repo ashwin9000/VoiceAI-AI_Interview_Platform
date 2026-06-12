@@ -682,13 +682,7 @@
   transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .iv-progress-accent {
-  width: 30%;
-  animation: iv-progress-slide 2s ease-in-out infinite;
-}
-@keyframes iv-progress-slide {
-  0%   { transform: translateX(-100%); }
-  50%  { transform: translateX(233%); }
-  100% { transform: translateX(-100%); }
+  width: 100%;
 }
 /* ── Text Input (typing mode) ── */
 .iv-text-input {
